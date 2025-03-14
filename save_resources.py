@@ -11,6 +11,7 @@ from googleapiclient.http import MediaIoBaseDownload
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from urllib.parse import urlparse, parse_qs
+from openai import OpenAI
 
 
 # Load environment variables
@@ -27,6 +28,121 @@ if not mongo_uri:
 client = MongoClient(mongo_uri)
 db = client.computing_in_context
 collection = db.resources
+
+# Set up OpenAI API client
+openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+
+def extract_notebook_info(notebook):
+    """Extract key information from a notebook"""
+    content = notebook["content"]
+    text_content = ""
+
+    # Extract all text from notebook cells
+    if "cells" in content:
+        for cell in content["cells"]:
+            if cell["cell_type"] == "markdown":
+                text_content += (
+                    " ".join(cell["source"])
+                    if isinstance(cell["source"], list)
+                    else cell["source"]
+                )
+            elif cell["cell_type"] == "code":
+                code = (
+                    " ".join(cell["source"])
+                    if isinstance(cell["source"], list)
+                    else cell["source"]
+                )
+                text_content += f" {code}"
+
+    # Extract language information
+    language = "python"  # Default
+    if "metadata" in content and "kernelspec" in content["metadata"]:
+        if "language" in content["metadata"]["kernelspec"]:
+            language = content["metadata"]["kernelspec"]["language"]
+
+    # Determine course level (can be refined based on content analysis)
+    # This is a simple heuristic - more sophisticated methods could be used
+    intro_keywords = ["introduction", "intro", "basic", "101", "beginner"]
+    advanced_keywords = ["advanced", "complex", "graduate", "specialized"]
+
+    level = "intermediate"  # Default
+    text_lower = text_content.lower()
+
+    if any(keyword in text_lower for keyword in intro_keywords):
+        level = "introductory"
+    elif any(keyword in text_lower for keyword in advanced_keywords):
+        level = "advanced"
+
+    # Extract CS concepts
+    # Request OpenAI to extract CS concepts
+    try:
+        concepts_prompt = f"""
+        Extract the main Computer Science concepts from this notebook content.
+        Return only 3-7 key CS concepts as a comma-separated list.
+        Content: {text_content[:4000]}  # Truncated to fit token limits
+        """
+
+        response = openai_client.chat.completions.create(
+            model="gpt-4o", messages=[{"role": "user", "content": concepts_prompt}]
+        )
+
+        cs_concepts = response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"Error extracting CS concepts: {e}")
+        cs_concepts = ""
+
+    # Generate embedding for the content
+    try:
+        embedding_response = openai_client.embeddings.create(
+            input=text_content[:8000],  # Truncate if needed
+            model="text-embedding-3-small",
+        )
+        embedding = embedding_response.data[0].embedding
+    except Exception as e:
+        print(f"Error generating embedding: {e}")
+        embedding = None
+
+    return {
+        "language": language,
+        "course_level": level,
+        "cs_concepts": cs_concepts,
+        "vector_embedding": embedding,
+        "content_sample": text_content[:500],  # Store a sample for verification
+    }
+
+
+def update_notebooks_with_embeddings():
+    """Process all notebooks and add embeddings and metadata"""
+    all_notebooks = collection.find({})
+    count = 0
+
+    for notebook in all_notebooks:
+        try:
+            info = extract_notebook_info(notebook)
+
+            # Update the document with new info
+            collection.update_one(
+                {"_id": notebook["_id"]},
+                {
+                    "$set": {
+                        "language": info["language"],
+                        "course_level": info["course_level"],
+                        "cs_concepts": info["cs_concepts"],
+                        "vector_embedding": info["vector_embedding"],
+                        "content_sample": info["content_sample"],
+                        "metadata_processed": True,
+                    }
+                },
+            )
+
+            print(f"Processed: {notebook['url']}")
+            count += 1
+
+        except Exception as e:
+            print(f"Error processing notebook {notebook.get('url', 'unknown')}: {e}")
+
+    print(f"Processed {count} notebooks with embeddings and metadata")
 
 
 def get_credentials():
@@ -175,9 +291,6 @@ def process_github_links(github_links):
     for link in github_links:
         content = fetch_github_notebook(link)
         save_to_mongodb(link, content)
-
-
-import os
 
 
 def export_notebooks_from_mongodb(output_dir="downloaded_notebooks"):
@@ -617,3 +730,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    update_notebooks_with_embeddings()
