@@ -33,8 +33,15 @@ collection = db.resources
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
-def search_notebooks(query_text="", language=None, course_level=None, limit=10):
-    """Search notebooks by content, language, and/or course level"""
+def search_notebooks(
+    query_text="",
+    language=None,
+    course_level=None,
+    context=None,
+    sequence_position=None,
+    limit=10,
+):
+    """Search notebooks by content, language, course level, context and/or sequence position"""
 
     # Generate embedding for the query text
     try:
@@ -53,8 +60,8 @@ def search_notebooks(query_text="", language=None, course_level=None, limit=10):
                 "index": "resources_vector_search",
                 "path": "vector_embedding",
                 "queryVector": query_vector,
-                "numCandidates": 100,  # Number of candidates to consider
-                "limit": limit * 3,  # Fetch extra for filtering
+                "numCandidates": 100,
+                "limit": limit * 3,
             }
         }
     ]
@@ -65,6 +72,10 @@ def search_notebooks(query_text="", language=None, course_level=None, limit=10):
         filter_conditions.append({"language": language})
     if course_level:
         filter_conditions.append({"course_level": course_level})
+    if context:
+        filter_conditions.append({"context": {"$regex": context, "$options": "i"}})
+    if sequence_position:
+        filter_conditions.append({"sequence_position": sequence_position})
 
     if filter_conditions:
         search_pipeline.append({"$match": {"$and": filter_conditions}})
@@ -80,6 +91,8 @@ def search_notebooks(query_text="", language=None, course_level=None, limit=10):
                 "url": 1,
                 "language": 1,
                 "course_level": 1,
+                "context": 1,
+                "sequence_position": 1,  # Add sequence position to results
                 "cs_concepts": 1,
                 "content_sample": 1,
                 "score": {"$meta": "vectorSearchScore"},
@@ -97,8 +110,8 @@ def search_notebooks(query_text="", language=None, course_level=None, limit=10):
 def search_example():
     # Search for data science notebooks in Python at introductory level
     results = search_notebooks(
+        query_text="functions and for loops",
         language="python",
-        course_level="introductory",
     )
 
     print(f"Found {len(results)} matching notebooks:")
@@ -148,6 +161,66 @@ def extract_notebook_info(notebook):
         language = response.choices[0].message.content.strip().lower()
     except Exception as e:
         print(f"Error extracting language: {e}")
+
+    # Extract context/topic information
+    try:
+        context_prompt = f"""
+        Identify the real-world context or topic of this notebook. 
+        Examples include: insurance verification, movie theatre admission, blood donor eligibility, 
+        airline systems, smartphone pricing, robotics competition, fashion rating, virtual pet game, 
+        vacation planning, tuition calculation, university admissions, language games, Pac-Man game, 
+        mathematical concepts.
+        
+        Return a brief phrase (2-5 words) that best describes the context.
+        If mathematical, specify the type of math (e.g., "number theory - Armstrong numbers").
+        If game-related, specify the game type (e.g., "game - Pac-Man").
+        
+        Content: {text_content[:4000]}  # Truncated to fit token limits
+        """
+
+        response = openai_client.chat.completions.create(
+            model="gpt-4o", messages=[{"role": "user", "content": context_prompt}]
+        )
+
+        context = response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"Error extracting context: {e}")
+        context = "general programming"
+
+    try:
+        sequence_prompt = f"""
+        Analyze this notebook and determine where it would likely appear in a course sequence.
+        Consider:
+        1. Complexity of concepts (basic concepts suggest early placement)
+        2. References to previous knowledge (more references suggest later placement)
+        3. Depth of application (complex applications suggest later placement)
+        4. Presence of terms like "introduction", "final project", "capstone", etc.
+        
+        Return ONLY ONE of these values:
+        - "beginning" (first 20% of a course, introduces basic concepts)
+        - "middle" (middle 60% of a course, builds on fundamentals)
+        - "end" (final 20%, integrates multiple concepts, more complex applications)
+        
+        Content: {text_content[:4000]}
+        """
+
+        response = openai_client.chat.completions.create(
+            model="gpt-4o", messages=[{"role": "user", "content": sequence_prompt}]
+        )
+
+        sequence_position = response.choices[0].message.content.strip().lower()
+
+        # Normalize response to one of our three categories
+        if "beginning" in sequence_position:
+            sequence_position = "beginning"
+        elif "end" in sequence_position:
+            sequence_position = "end"
+        else:
+            sequence_position = "middle"
+
+    except Exception as e:
+        print(f"Error determining sequence position: {e}")
+        sequence_position = "middle"  # Default to middle if we can't determine
 
     # Determine course level (can be refined based on content analysis)
     # This is a simple heuristic - more sophisticated methods could be used
@@ -236,8 +309,10 @@ def extract_notebook_info(notebook):
         "language": language,
         "course_level": level,
         "cs_concepts": cs_concepts,
+        "context": context,
+        "sequence_position": sequence_position,
         "vector_embedding": embedding,
-        "content_sample": text_content[:500],  # Store a sample for verification
+        "content_sample": text_content[:500],
     }
 
 
@@ -258,6 +333,8 @@ def update_notebooks_with_embeddings():
                         "language": info["language"],
                         "course_level": info["course_level"],
                         "cs_concepts": info["cs_concepts"],
+                        "context": info["context"],
+                        "sequence_position": info["sequence_position"],  # New field
                         "vector_embedding": info["vector_embedding"],
                         "content_sample": info["content_sample"],
                         "metadata_processed": True,
@@ -488,5 +565,5 @@ def main():
 
 if __name__ == "__main__":
     # main()
-    update_notebooks_with_embeddings()
-# search_example()
+    # update_notebooks_with_embeddings()
+    search_example()
