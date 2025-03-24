@@ -111,6 +111,7 @@ def search_example():
     # Search for data science notebooks in Python at introductory level
     results = search_notebooks(
         query_text="functions and for loops",
+        sequence_position="end",
         language="python",
     )
 
@@ -119,6 +120,8 @@ def search_example():
         print(f"\n{idx}. {result['url']}")
         print(f"   Language: {result['language']}")
         print(f"   Level: {result['course_level']}")
+        print(f"   Context: {result['context']}")
+        print(f"   Sequence Position: {result['sequence_position']}")
         print(f"   Concepts: {result['cs_concepts']}")
         print(f"   Sample: {result['content_sample'][:100]}...")
         print(f"   Score: {result.get('score', 'N/A')}")
