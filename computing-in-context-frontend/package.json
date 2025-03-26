@@ -9,7 +9,10 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "next": "15.2.2",
+    "dotenv": "^16.4.7",
+    "mongodb": "^6.15.0",
+    "next": "15.2.4",
+    "openai": "^4.89.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
@@ -17,10 +20,10 @@
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
-    "@types/react": "^19.0.10",
-    "@types/react-dom": "^19.0.4",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "15.2.2",
+    "eslint-config-next": "15.2.4",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
