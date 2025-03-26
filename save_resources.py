@@ -19,6 +19,7 @@ load_dotenv()
 
 # OAuth scopes needed
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
+EMBEDDING_MODEL = "text-embedding-3-large"
 
 # Set up MongoDB connection
 mongo_uri = os.getenv("MONGODB_CONNECTION_STRING")
@@ -39,14 +40,13 @@ def search_notebooks(
     course_level=None,
     context=None,
     sequence_position=None,
-    limit=10,
 ):
     """Search notebooks by content, language, course level, context and/or sequence position"""
 
     # Generate embedding for the query text
     try:
         embedding_response = openai_client.embeddings.create(
-            input=query_text, model="text-embedding-3-small"
+            input=query_text, model=EMBEDDING_MODEL
         )
         query_vector = embedding_response.data[0].embedding
     except Exception as e:
@@ -61,7 +61,7 @@ def search_notebooks(
                 "path": "vector_embedding",
                 "queryVector": query_vector,
                 "numCandidates": 100,
-                "limit": limit * 3,
+                "limit": 10,
             }
         }
     ]
@@ -79,9 +79,6 @@ def search_notebooks(
 
     if filter_conditions:
         search_pipeline.append({"$match": {"$and": filter_conditions}})
-
-    # Add limit
-    search_pipeline.append({"$limit": limit})
 
     # Add projection for relevant fields
     search_pipeline.append(
@@ -110,9 +107,7 @@ def search_notebooks(
 def search_example():
     # Search for data science notebooks in Python at introductory level
     results = search_notebooks(
-        query_text="functions and for loops",
-        sequence_position="end",
-        language="python",
+        query_text="vowel formants using numpy",
     )
 
     print(f"Found {len(results)} matching notebooks:")
@@ -300,8 +295,8 @@ def extract_notebook_info(notebook):
     # Generate embedding for the content
     try:
         embedding_response = openai_client.embeddings.create(
-            input=text_content[:8000],  # Truncate if needed
-            model="text-embedding-3-small",
+            input=text_content[:8192],  # Truncate if needed
+            model=EMBEDDING_MODEL,
         )
         embedding = embedding_response.data[0].embedding
     except Exception as e:
@@ -337,7 +332,7 @@ def update_notebooks_with_embeddings():
                         "course_level": info["course_level"],
                         "cs_concepts": info["cs_concepts"],
                         "context": info["context"],
-                        "sequence_position": info["sequence_position"],  # New field
+                        "sequence_position": info["sequence_position"],
                         "vector_embedding": info["vector_embedding"],
                         "content_sample": info["content_sample"],
                         "metadata_processed": True,
@@ -371,9 +366,7 @@ def get_credentials():
         else:
             # Use client_id from environment
             client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID")
-            client_secret = os.getenv(
-                "GOOGLE_OAUTH_CLIENT_SECRET"
-            )  # You'll need this too
+            client_secret = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
 
             if not client_id or not client_secret:
                 raise ValueError("Missing OAuth credentials in environment variables")
