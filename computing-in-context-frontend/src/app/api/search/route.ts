@@ -18,17 +18,26 @@ export async function POST(request: Request) {
     //console.log("Docs: ", documents);
 
     const results: SearchResult[] = documents.map((doc) => ({
-      title: doc.title || undefined,
-      snippet: doc.content || undefined,
+      title: doc.title || "Filler",
+      snippet: doc.content || "content",
       score: doc.score || 0,
+      url: doc.url || "url",
+      language: doc.language || "lang",
+      course_level: doc.course_level || "course_level",
+      context: doc.context || "context",
+      cs_concepts: doc.cs_concepts || "concepts",
     }));
-    //console.log("results", results);
+
+    for (const doc of documents) {
+      console.log(doc.score);
+    }
+
     return NextResponse.json(results);
   } catch (error) {
     console.error("Search API error:", error);
     return NextResponse.json(
       { error: "Failed to search resources" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

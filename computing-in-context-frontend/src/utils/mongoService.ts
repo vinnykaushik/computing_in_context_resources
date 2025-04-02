@@ -56,9 +56,22 @@ export async function searchResources(query: string) {
           limit: 10,
         },
       },
+      {
+        $project: {
+          title: 1,
+          content: 1,
+          url: 1,
+          language: 1,
+          course_level: 1,
+          context: 1,
+          cs_concepts: 1,
+          vector_embedding: 1,
+          score: { $meta: "vectorSearchScore" },
+        },
+      },
     ];
+
     const results = await resources.aggregate(searchPipeline).toArray();
-    console.log("SearchResults: ", results);
     return results;
   } catch (error) {
     console.error("Search error:", error);

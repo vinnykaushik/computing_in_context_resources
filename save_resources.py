@@ -89,7 +89,7 @@ def search_notebooks(
                 "language": 1,
                 "course_level": 1,
                 "context": 1,
-                "sequence_position": 1,  # Add sequence position to results
+                "sequence_position": 1,
                 "cs_concepts": 1,
                 "content_sample": 1,
                 "score": {"$meta": "vectorSearchScore"},
@@ -173,11 +173,11 @@ def extract_notebook_info(notebook):
         If mathematical, specify the type of math (e.g., "number theory - Armstrong numbers").
         If game-related, specify the game type (e.g., "game - Pac-Man").
         
-        Content: {text_content[:4000]}  # Truncated to fit token limits
+        Content: {text_content[:4000]}
         """
 
         response = openai_client.chat.completions.create(
-            model="gpt-4o", messages=[{"role": "user", "content": context_prompt}]
+            model="o3-mini", messages=[{"role": "user", "content": context_prompt}]
         )
 
         context = response.choices[0].message.content.strip()
@@ -203,7 +203,7 @@ def extract_notebook_info(notebook):
         """
 
         response = openai_client.chat.completions.create(
-            model="gpt-4o", messages=[{"role": "user", "content": sequence_prompt}]
+            model="o3-mini", messages=[{"role": "user", "content": sequence_prompt}]
         )
 
         sequence_position = response.choices[0].message.content.strip().lower()
@@ -222,58 +222,27 @@ def extract_notebook_info(notebook):
 
     # Determine course level (can be refined based on content analysis)
     # This is a simple heuristic - more sophisticated methods could be used
-    intro_keywords = [
-        "introduction",
-        "intro",
-        "basic",
-        "101",
-        "beginner",
-        "fundamental",
-        "elementary",
-        "starting",
-        "novice",
-        "primer",
-        "foundation",
-        "getting started",
-        "first steps",
-        "tutorial",
-        "learn to",
-        "learning to",
-        "basics of",
-        "introductory",
-        "beginner-friendly",
-    ]
-    advanced_keywords = [
-        "advanced",
-        "complex",
-        "graduate",
-        "specialized",
-        "expert",
-        "professional",
-        "high-level",
-        "sophisticated",
-        "in-depth",
-        "advanced topics",
-        "cutting-edge",
-        "research",
-        "optimization",
-        "deep dive",
-        "mastering",
-        "architecture",
-        "algorithm design",
-        "system design",
-        "performance tuning",
-        "technical deep dive",
-    ]
+    try:
+        sequence_prompt = f"""
+        Using the below information, determine the course level of this lesson. Only return one of: [CS1, CS2, CS3].
 
-    level = "intermediate"  # Default
-    text_lower = text_content.lower()
+        CS1: The first required programming course of the Computer Science major.
+        CS2: The second required programming course of the Computer Science major. This should not be a class typically taken in the same term as CS1.
+        CS3: The third required course of the Computer Science major. This should not be a class typically taken in the same term as CS2. NOTE: If your
+        department or institution does not have a required third course in the Computer Science major – that is, if there is more than one course that 
+        Computer Science majors can take immediately following the required CS2 course – provide information about the required Computer Science course 
+        that most students who are Computer Science majors take after CS2 (e.g., Data Structures). Be sure to reference the same course for CS3 across all reporting periods."""
 
-    if any(keyword in text_lower for keyword in intro_keywords):
-        level = "introductory"
-    elif any(keyword in text_lower for keyword in advanced_keywords):
-        level = "advanced"
+        response = openai_client.chat.completions.create(
+            model="o3-mini", messages=[{"role": "user", "content": sequence_prompt}]
+        )
 
+        level = response.choices[0].message.content.strip().upper()
+        if level not in ["CS1", "CS2", "CS3"]:
+            level = "CS1"  # Default to CS1 if we can't determine
+
+    except Exception as e:
+        print(f"Error determining course level: {e}")
     # Extract CS concepts
     # Request OpenAI to extract CS concepts
     try:

@@ -2,10 +2,16 @@
 
 import { useState } from "react";
 import "./globals.css";
+import ResultCard from "@/components/ResultCard";
 
 export type SearchResult = {
-  title?: string;
-  snippet?: string;
+  title: string;
+  url: string;
+  language: string;
+  course_level: string;
+  context: string;
+  cs_concepts: string;
+  snippet: string;
   score: number;
 };
 
@@ -44,23 +50,23 @@ export default function Home() {
   };
 
   return (
-    <main className="flex min-h-screen flex-col items-center p-8 max-w-4xl mx-auto">
-      <h1 className="text-3xl font-bold mb-8 bg-gradient-to-r from-secondary to-tertiary bg-clip-text text-transparent">
+    <main className="mx-auto flex min-h-screen max-w-4xl flex-col items-center p-8">
+      <h1 className="from-secondary to-tertiary mb-8 bg-gradient-to-r bg-clip-text text-3xl font-bold text-transparent">
         Computing in Context
       </h1>
       {/* Search bar */}
-      <form onSubmit={handleSearch} className="w-full mb-8">
+      <form onSubmit={handleSearch} className="mb-8 w-full">
         <div className="flex gap-2">
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="search resources..."
-            className="font-mono flex-grow border-primary border rounded-full p-2 px-4"
+            className="border-primary flex-grow rounded-full border p-2 px-4 font-mono"
           />
           <button
             type="submit"
-            className="bg-primary hover:opacity-80 text-white px-4 py-2 rounded"
+            className="bg-primary rounded px-4 py-2 text-white hover:opacity-80"
             disabled={isLoading}
           >
             {isLoading ? "Searching..." : "Search"}
@@ -70,22 +76,21 @@ export default function Home() {
       {isLoading && <p>Searching...</p>}
       <div className="w-full">
         {results.length > 0 ? (
-          <div className="space-y-4">
+          <div className="flex flex-col space-y-4">
             <p className="text-sm text-gray-500">
               {results.length} results found
             </p>
             {results.map((result, index) => (
-              <div key={index} className="border rounded-full p-4">
-                <h2 className="font-semibold text-lg">
-                  {result.title || "Untitled Notebook"}
-                </h2>
-                <p className="text-sm text-gray-700 mt-1">{"blank for now"}</p>
-                <div className="flex gap-2 mt-2">
-                  <span className="bg-gray-100 text-xs px-2 py-1 rounded">
-                    Score: {Math.round(result.score * 100) / 100}
-                  </span>
-                </div>
-              </div>
+              <ResultCard
+                key={index}
+                title={result.title || "FILLER"}
+                language={result.language}
+                course_level={result.course_level}
+                context={result.context}
+                cs_concepts={result.cs_concepts}
+                confidenceScore={result.score}
+                link={result.url}
+              />
             ))}
           </div>
         ) : query && !isLoading ? (
