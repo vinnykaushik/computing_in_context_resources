@@ -1,24 +1,47 @@
 import dotenv from "dotenv";
 import { MongoClient } from "mongodb";
 import * as mongoDb from "mongodb";
-import OpenAI from "openai";
+import { OpenAI } from "openai";
+
+dotenv.config();
+
+let client: MongoClient | null = null;
 
 /**
  * Connect to MongoDB database
  * @returns MongoDB database connection
  */
 async function connectToDatabase() {
-  dotenv.config();
-  const MONGODB_CONNECTION_STRING = process.env.MONGODB_CONNECTION_STRING;
-  if (!MONGODB_CONNECTION_STRING) {
-    throw new Error("Missing environment variables");
-  }
-  // Connect to MongoDB
-  const client: MongoClient = new MongoClient(MONGODB_CONNECTION_STRING);
-  await client.connect();
+  if (!client) {
+    const MONGODB_CONNECTION_STRING = process.env.MONGODB_CONNECTION_STRING;
+    if (!MONGODB_CONNECTION_STRING) {
+      throw new Error("Missing environment variables");
+    }
 
-  const db: mongoDb.Db = client.db("computing_in_context");
-  return db;
+    // Initialize the MongoDB client
+    client = new MongoClient(MONGODB_CONNECTION_STRING);
+    try {
+      await client.connect();
+      console.log("Connected to MongoDB");
+    } catch (error) {
+      console.error("Error connecting to MongoDB:", error);
+      client = null;
+      connectToDatabase();
+      throw error;
+    }
+  }
+  return client.db("computing_in_context");
+}
+
+/**
+ * Close the MongoDB client.
+ */
+export async function closeDatabaseConnection() {
+  if (client) {
+    await client.close();
+    client = null;
+    console.log("MongoDB connection closed");
+  }
 }
 
 async function embedQuery(query: string) {
@@ -43,6 +66,7 @@ async function embedQuery(query: string) {
  */
 export async function searchResources(query: string) {
   const db = await connectToDatabase();
+  console.log("MongoService searchResources called with db:", db);
   const resources = db.collection("resources");
   try {
     const vectorQuery = await embedQuery(query);
@@ -75,6 +99,20 @@ export async function searchResources(query: string) {
     return results;
   } catch (error) {
     console.error("Search error:", error);
+    throw error;
+  }
+}
+
+export async function getResourceById(id: string) {
+  console.log("endpoint called");
+  const db = await connectToDatabase();
+  const resources = db.collection("resources");
+  try {
+    const resource = await resources.findOne({ _id: new mongoDb.ObjectId(id) });
+    console.log("MongoService resource found: ", resource);
+    return resource;
+  } catch (error) {
+    console.error("Error fetching resource by ID:", error);
     throw error;
   }
 }
