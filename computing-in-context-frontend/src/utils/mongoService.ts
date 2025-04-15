@@ -2,6 +2,10 @@ import dotenv from "dotenv";
 import { MongoClient } from "mongodb";
 import * as mongoDb from "mongodb";
 import { OpenAI } from "openai";
+import { NotebookDocument, NotebookContent } from "./types";
+import { extractNotebookInfo } from "@/scripts/saveResources";
+import * as fs from "fs";
+import * as path from "path";
 
 dotenv.config();
 
@@ -115,4 +119,141 @@ export async function getResourceById(id: string) {
     console.error("Error fetching resource by ID:", error);
     throw error;
   }
+}
+
+export async function saveToMongoDB(
+  url: string,
+  content: NotebookContent | null,
+) {
+  const db = await connectToDatabase();
+  const resources = db.collection("resources");
+  if (!content) {
+    console.log(`Failed to save ${url} to MongoDB`);
+    return;
+  }
+
+  if (typeof content !== "object") {
+    try {
+      // Try to parse as JSON if it's a string
+      content = JSON.parse(content);
+    } catch (e) {
+      console.log(`Content for ${url} is not a valid notebook format`, e);
+      return;
+    }
+  }
+
+  const notebook: NotebookDocument = {
+    url,
+    content: content as NotebookContent,
+    date_saved: new Date(),
+  };
+
+  await resources.insertOne(notebook);
+  console.log(`Saved ${url} to MongoDB as .ipynb`);
+}
+
+export async function updateNotebooksWithEmbeddings() {
+  const db = await connectToDatabase();
+  const collection = db.collection("resources");
+  let count = 0;
+
+  // Find all notebooks
+  const all_notebooks = (await collection
+    .find({})
+    .toArray()) as NotebookDocument[];
+
+  for (const notebook of all_notebooks) {
+    try {
+      const info = await extractNotebookInfo(notebook);
+
+      // Update the document with new info
+      await collection.updateOne(
+        { _id: notebook._id },
+        {
+          $set: {
+            language: info.language,
+            course_level: info.course_level,
+            cs_concepts: info.cs_concepts,
+            context: info.context,
+            sequence_position: info.sequence_position,
+            vector_embedding: info.vector_embedding ?? undefined,
+            content_sample: info.content_sample,
+            metadata_processed: true,
+          },
+        },
+      );
+
+      console.log(`Processed: ${notebook.url}`);
+      count++;
+    } catch (e) {
+      console.error(
+        `Error processing notebook ${notebook.url || "unknown"}: ${e}`,
+      );
+    }
+  }
+
+  console.log(`Processed ${count} notebooks with embeddings and metadata`);
+}
+
+export async function exportResourcesFromMongoDB(
+  output_dir = "downloaded_notebooks",
+) {
+  const db = await connectToDatabase();
+  const resources = db.collection("resources");
+
+  // Create output directory if it doesn't exist
+  if (!fs.existsSync(output_dir)) {
+    fs.mkdirSync(output_dir);
+    console.log(`Created output directory: ${output_dir}`);
+  }
+
+  // Query all notebooks from MongoDB
+  const all_notebooks = await resources.find({}).toArray();
+  let count = 0;
+
+  for (const notebook of all_notebooks) {
+    try {
+      // Extract a filename from the URL
+      const url = notebook.url;
+      let filename = "";
+
+      if (url.includes("colab.research.google.com")) {
+        // For Colab, use the file ID as the filename
+        const file_id = url.split("/").pop() || "";
+        filename = `colab_${file_id}.ipynb`;
+      } else if (url.includes("github.com")) {
+        // For GitHub, use the repo and filename
+        const parts = url.replace("https://github.com/", "").split("/");
+        const repo = parts.slice(0, 2).join("_"); // org_repo
+        filename = `github_${repo}_${parts[parts.length - 1]}`;
+        if (filename.includes("blob")) {
+          // Clean up filename if it contains 'blob'
+          filename = filename.replace("blob_", "");
+        }
+      } else {
+        // Generic fallback
+        filename = `notebook_${count}.ipynb`;
+      }
+
+      // Make sure the filename ends with .ipynb
+      if (!filename.endsWith(".ipynb")) {
+        filename += ".ipynb";
+      }
+
+      // Create full path
+      const filepath = path.join(output_dir, filename);
+
+      // Write notebook content to file
+      fs.writeFileSync(filepath, JSON.stringify(notebook.content, null, 2), {
+        encoding: "utf-8",
+      });
+
+      console.log(`Exported: ${filepath}`);
+      count++;
+    } catch (e) {
+      console.error(`Error exporting notebook ${count}: ${e}`);
+    }
+  }
+
+  console.log(`Exported ${count} notebooks to ${output_dir} directory`);
 }

@@ -6,7 +6,8 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "upload": "npx tsx uploadResourcesToDrive.ts"
   },
   "dependencies": {
     "@nteract/commutable": "^7.5.1",
