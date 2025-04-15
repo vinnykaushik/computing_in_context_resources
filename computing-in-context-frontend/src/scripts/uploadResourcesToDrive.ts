@@ -77,7 +77,7 @@ export async function deleteAllFilesInFolder(
     try {
       await drive.files.get({
         fileId: folderId,
-        fields: "id,name,mimeType",
+        fields: "id,name,mimeType,driveId",
         supportsAllDrives: true,
         supportsTeamDrives: true,
       });
@@ -90,41 +90,69 @@ export async function deleteAllFilesInFolder(
       return;
     }
 
-    // Query for all files within the folder
-    const response = await drive.files.list({
-      q: `'${folderId}' in parents and trashed=false`,
-      fields: "files(id, name)",
-      supportsAllDrives: true,
-      supportsTeamDrives: true,
-      includeItemsFromAllDrives: true,
-    });
+    // Query for all files within the folder with pagination to handle large folders
+    let pageToken: string | undefined;
+    let allFiles: Array<{ id: string; name: string }> = [];
 
-    const files = response.data.files;
-    if (files?.length === 0) {
+    do {
+      const response = await drive.files.list({
+        q: `'${folderId}' in parents and trashed=false`,
+        fields: "nextPageToken, files(id, name)",
+        pageSize: 100,
+        supportsAllDrives: true,
+        supportsTeamDrives: true,
+        includeItemsFromAllDrives: true,
+        pageToken: pageToken || undefined,
+      });
+
+      const files = response.data.files || [];
+      allFiles = allFiles.concat(files as Array<{ id: string; name: string }>);
+      pageToken = response.data.nextPageToken ?? undefined;
+    } while (pageToken);
+
+    if (allFiles.length === 0) {
       console.log("No files found in folder.");
       return;
     }
 
-    console.log(`Found ${files?.length} files to delete`);
+    console.log(`Found ${allFiles.length} files to delete`);
 
-    // Delete each file in the folder
+    // Delete each file in the folder with better error handling
     let successCount = 0;
     let failureCount = 0;
 
-    if (files) {
-      for (const file of files) {
+    // Use a small batch size and introduce a delay to avoid rate limiting
+    const batchSize = 10;
+    for (let i = 0; i < allFiles.length; i += batchSize) {
+      const batch = allFiles.slice(i, i + batchSize);
+
+      // Process files in parallel within each small batch
+      const deletePromises = batch.map(async (file) => {
         try {
-          await drive.files.delete({
+          await drive.files.update({
             fileId: file.id as string,
+            requestBody: {
+              trashed: true,
+            },
             supportsAllDrives: true,
             supportsTeamDrives: true,
           });
           console.log(`Deleted file: ${file.name}`);
-          successCount++;
+          return { success: true };
         } catch (error) {
-          console.error(`Failed to delete file ${file.name}: ${error}`);
-          failureCount++;
+          console.error(`Error deleting file ${file.name}: ${error}`);
+          return { success: false };
         }
+      });
+
+      // Wait for the current batch to complete
+      const results = await Promise.all(deletePromises);
+      successCount += results.filter((r) => r.success).length;
+      failureCount += results.filter((r) => !r.success).length;
+
+      // Add a small delay between batches to avoid rate limiting
+      if (i + batchSize < allFiles.length) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
       }
     }
 
@@ -197,18 +225,15 @@ async function uploadToDrive(
   );
 }
 
-// Check if we want to delete files before uploading
 const shouldDeleteFirst = process.argv.includes("--delete");
 
 authorize(SCOPES)
   .then(async (client) => {
-    // If delete flag is provided, delete all files in the folder first
     if (shouldDeleteFirst && FOLDER_ID) {
       console.log("Deleting all files in folder before uploading new ones...");
       await deleteAllFilesInFolder(client, FOLDER_ID);
     }
 
-    // Then proceed with uploading
     resourceLinks.forEach((link: string) => {
       downloadFileFromGitHub(link, client, FOLDER_ID);
     });

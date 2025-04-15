@@ -5,10 +5,7 @@ import {
   downloadResourcesFromDrive,
   listResourcesInDrive,
 } from "@/utils/driveService";
-import {
-  saveToMongoDB,
-  updateNotebooksWithEmbeddings,
-} from "@/utils/mongoService";
+import { saveToMongoDB } from "@/utils/mongoService";
 
 // Load environment variables
 dotenv.config();
@@ -48,8 +45,10 @@ async function processGoogleDriveNotebooks() {
         notebook.webViewLink ||
         `https://drive.google.com/file/d/${notebook.id}/view`;
 
+      const info = await extractNotebookInfo(content);
+
       // Save to MongoDB
-      await saveToMongoDB(url, content);
+      await saveToMongoDB(url, content, info);
     }
 
     console.log(
@@ -118,7 +117,7 @@ export async function extractNotebookInfo(
     `;
 
     const response = await openai_client.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-4.1-nano",
       messages: [{ role: "user", content: language_prompt }],
     });
 
@@ -240,7 +239,7 @@ export async function extractNotebookInfo(
     `;
 
     const response = await openai_client.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-4.1-nano",
       messages: [{ role: "user", content: concepts_prompt }],
     });
 
@@ -276,6 +275,4 @@ export async function extractNotebookInfo(
   };
 }
 
-processGoogleDriveNotebooks().then(() => {
-  updateNotebooksWithEmbeddings();
-});
+processGoogleDriveNotebooks();

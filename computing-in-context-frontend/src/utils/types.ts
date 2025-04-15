@@ -4,6 +4,7 @@ import { ObjectId } from "mongodb";
 export type NotebookDocument = {
   _id?: ObjectId;
   url: string;
+  title: string;
   content: NotebookContent;
   date_saved: Date;
   language?: string;

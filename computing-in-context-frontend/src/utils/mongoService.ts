@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 import { MongoClient } from "mongodb";
 import * as mongoDb from "mongodb";
 import { OpenAI } from "openai";
-import { NotebookDocument, NotebookContent } from "./types";
+import { NotebookDocument, NotebookContent, NotebookInfo } from "./types";
 import { extractNotebookInfo } from "@/scripts/embedResources";
 import * as fs from "fs";
 import * as path from "path";
@@ -124,6 +124,7 @@ export async function getResourceById(id: string) {
 export async function saveToMongoDB(
   url: string,
   content: NotebookContent | null,
+  info: NotebookInfo,
 ) {
   const db = await connectToDatabase();
   const resources = db.collection("resources");
@@ -145,6 +146,15 @@ export async function saveToMongoDB(
   const notebook: NotebookDocument = {
     url,
     content: content as NotebookContent,
+    language: info.language,
+    title: info.title,
+    course_level: info.course_level,
+    cs_concepts: info.cs_concepts,
+    context: info.context,
+    sequence_position: info.sequence_position,
+    vector_embedding: info.vector_embedding ?? undefined,
+    content_sample: info.content_sample,
+    metadata_processed: true,
     date_saved: new Date(),
   };
 
@@ -172,6 +182,7 @@ export async function updateNotebooksWithEmbeddings() {
         {
           $set: {
             language: info.language,
+            title: info.title,
             course_level: info.course_level,
             cs_concepts: info.cs_concepts,
             context: info.context,
