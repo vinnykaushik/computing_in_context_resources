@@ -3,7 +3,7 @@ import { MongoClient } from "mongodb";
 import * as mongoDb from "mongodb";
 import { OpenAI } from "openai";
 import { NotebookDocument, NotebookContent } from "./types";
-import { extractNotebookInfo } from "@/scripts/saveResources";
+import { extractNotebookInfo } from "@/scripts/embedResources";
 import * as fs from "fs";
 import * as path from "path";
 
