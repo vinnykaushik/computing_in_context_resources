@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "upload": "npx tsx uploadResourcesToDrive.ts"
+    "upload": "npx tsx src/scripts/uploadResourcesToDrive.ts",
+    "embed": "npx tsx src/scripts/saveResources.ts"
   },
   "dependencies": {
     "@nteract/commutable": "^7.5.1",
