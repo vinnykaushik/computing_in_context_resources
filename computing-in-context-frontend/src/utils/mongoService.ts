@@ -4,6 +4,7 @@ import * as mongoDb from "mongodb";
 import { OpenAI } from "openai";
 import { NotebookDocument, NotebookContent, NotebookInfo } from "./types";
 import { extractNotebookInfo } from "@/scripts/embedResources";
+import { createEnhancedQueryText, logQueryParsing } from "./phraseAwareSearch";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -19,7 +20,7 @@ async function connectToDatabase() {
   if (!client) {
     const MONGODB_CONNECTION_STRING = process.env.MONGODB_CONNECTION_STRING;
     if (!MONGODB_CONNECTION_STRING) {
-      throw new Error("Missing environment variables");
+      throw new Error("Missing MONGODB_CONNECTION_STRING environment variable");
     }
 
     // Initialize the MongoDB client
@@ -30,8 +31,10 @@ async function connectToDatabase() {
     } catch (error) {
       console.error("Error connecting to MongoDB:", error);
       client = null;
-      connectToDatabase();
-      throw error;
+      // Don't recursively call connectToDatabase as it can cause a stack overflow
+      throw new Error(
+        `MongoDB connection failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
     }
   }
   return client.db("computing_in_context");
@@ -48,42 +51,110 @@ export async function closeDatabaseConnection() {
   }
 }
 
+/**
+ * Generates embeddings for the query, with phrase-aware handling
+ * @param query The user query string
+ * @returns Vector embedding array
+ */
 async function embedQuery(query: string) {
   dotenv.config();
   const EMBEDDING_MODEL = "text-embedding-3-large";
+  const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-  const openaiClient = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-  });
+  if (!OPENAI_API_KEY) {
+    throw new Error("Missing OPENAI_API_KEY environment variable");
+  }
 
-  const response = await openaiClient.embeddings.create({
-    input: query,
-    model: EMBEDDING_MODEL,
-  });
-  return response.data[0].embedding;
+  try {
+    const openaiClient = new OpenAI({
+      apiKey: OPENAI_API_KEY,
+    });
+
+    // Create enhanced query that preserves phrases
+    const enhancedQuery = createEnhancedQueryText(query);
+
+    // For debugging
+    if (process.env.NODE_ENV === "development") {
+      logQueryParsing(query);
+      console.log("Enhanced query:", enhancedQuery);
+    }
+
+    const response = await openaiClient.embeddings.create({
+      input: enhancedQuery,
+      model: EMBEDDING_MODEL,
+    });
+
+    if (!response.data || response.data.length === 0) {
+      throw new Error("Empty embedding response from OpenAI");
+    }
+
+    return response.data[0].embedding;
+  } catch (error) {
+    console.error("OpenAI embedding generation error:", error);
+    throw new Error(
+      `Failed to generate embedding: ${error instanceof Error ? error.message : "Unknown error"}`,
+    );
+  }
 }
 
 /**
- *
- * @param query
- * @returns
+ * Search resources using phrase-aware vector search
+ * @param query The user's search query
+ * @param filters Optional filters to apply alongside vector search
+ * @returns Array of search results with relevance scores
  */
-export async function searchResources(query: string) {
-  const db = await connectToDatabase();
-  const resources = db.collection("resources");
+export async function searchResources(
+  query: string,
+  filters: Record<string, string | string[]> = {},
+) {
   try {
-    const vectorQuery = await embedQuery(query);
-    const searchPipeline = [
-      {
-        $vectorSearch: {
-          index: "resources_vector_search",
-          path: "vector_embedding",
-          queryVector: vectorQuery,
-          numCandidates: 100,
-          limit: 10,
+    const db = await connectToDatabase();
+    const resources = db.collection("resources");
+
+    // Verify the collection exists
+    const collections = await db
+      .listCollections({ name: "resources" })
+      .toArray();
+    if (collections.length === 0) {
+      throw new Error("Resources collection not found in database");
+    }
+
+    try {
+      // Generate phrase-aware vector embedding
+      const vectorQuery = await embedQuery(query);
+
+      // Build the base search pipeline
+      const searchPipeline: mongoDb.Document[] = [
+        {
+          $vectorSearch: {
+            index: "resources_vector_search",
+            path: "vector_embedding",
+            queryVector: vectorQuery,
+            numCandidates: 100,
+            limit: 10,
+          },
         },
-      },
-      {
+      ];
+
+      // Add filters if provided
+      if (Object.keys(filters).length > 0) {
+        const filterCriteria: Record<string, string | string[]> = {};
+
+        // Process each filter field if it exists
+        ["language", "course_level", "sequence_position"].forEach((field) => {
+          if (filters[field]) {
+            filterCriteria[field] = filters[field];
+          }
+        });
+
+        // Add $match stage for filters if any were specified
+        if (Object.keys(filterCriteria).length > 0) {
+          searchPipeline.push({ $match: filterCriteria });
+        }
+      }
+
+      // Add projection for result fields
+      searchPipeline.push({
         $project: {
           title: 1,
           content: 1,
@@ -95,14 +166,40 @@ export async function searchResources(query: string) {
           vector_embedding: 1,
           score: { $meta: "vectorSearchScore" },
         },
-      },
-    ];
+      });
 
-    const results = await resources.aggregate(searchPipeline).toArray();
-    return results;
+      // Log the pipeline for debugging
+      if (process.env.NODE_ENV === "development") {
+        console.log(
+          "Search pipeline:",
+          JSON.stringify(searchPipeline, null, 2),
+        );
+      }
+
+      // Execute the aggregation and return results
+      const results = await resources.aggregate(searchPipeline).toArray();
+      return results;
+    } catch (error) {
+      // Check if the error is related to the vector search index
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      if (
+        errorMessage.includes("resources_vector_search") &&
+        errorMessage.includes("index")
+      ) {
+        throw new Error(
+          `Vector search index 'resources_vector_search' not found. Please verify your MongoDB Atlas configuration.`,
+        );
+      }
+
+      console.error("Search error:", error);
+      throw error;
+    }
   } catch (error) {
-    console.error("Search error:", error);
-    throw error;
+    console.error("Error executing search:", error);
+    throw new Error(
+      `Search failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+    );
   }
 }
 
