@@ -203,6 +203,42 @@ export async function searchResources(
   }
 }
 
+export async function getAllResources(limit: number = 20) {
+  const db = await connectToDatabase();
+  const resources = db.collection("resources");
+  try {
+    // Verify the collection exists
+    const collections = await db
+      .listCollections({ name: "resources" })
+      .toArray();
+    if (collections.length === 0) {
+      throw new Error("Resources collection not found in database");
+    }
+
+    // Fetch resources with a limit and basic projection
+    const results = await resources
+      .find({})
+      .limit(limit)
+      .project({
+        title: 1,
+        content: 1,
+        url: 1,
+        language: 1,
+        course_level: 1,
+        context: 1,
+        cs_concepts: 1,
+      })
+      .toArray();
+
+    return results;
+  } catch (error) {
+    console.error("Error fetching all resources:", error);
+    throw new Error(
+      `Failed to fetch resources: ${error instanceof Error ? error.message : "Unknown error"}`,
+    );
+  }
+}
+
 export async function getResourceById(id: string) {
   console.log("endpoint called");
   const db = await connectToDatabase();

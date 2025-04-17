@@ -251,7 +251,7 @@ export async function extractNotebookInfo(
   // Generate embedding for the content
   try {
     const embedding_response = await openai_client.embeddings.create({
-      input: text_content.substring(0, 8192), // Truncate if needed
+      input: text_content.substring(0, 8192),
       model: EMBEDDING_MODEL,
     });
     embedding = embedding_response.data[0].embedding;

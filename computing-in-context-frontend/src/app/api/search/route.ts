@@ -1,6 +1,50 @@
 import { NextResponse } from "next/server";
-import { searchResources } from "@/utils/mongoService";
+import { searchResources, getAllResources } from "@/utils/mongoService";
 import { SearchResult } from "@/app/page";
+
+/**
+ * GET route handler to fetch all resources
+ * Used to display resources before a search is performed
+ */
+export async function GET() {
+  try {
+    const documents = await getAllResources(20); // Limit to 20 resources
+
+    if (!documents || documents.length === 0) {
+      return NextResponse.json([]);
+    }
+
+    const results: SearchResult[] = documents.map((doc) => ({
+      title: doc.title || "Untitled Resource",
+      snippet: doc.content || "No content preview available",
+      score: 1, // Default score since this is not a search result
+      url: doc.url || "#",
+      language: doc.language || "Not specified",
+      course_level: doc.course_level || "Not specified",
+      context: doc.context || "Not specified",
+      cs_concepts: doc.cs_concepts || "Not specified",
+    }));
+
+    if (process.env.NODE_ENV === "development") {
+      console.log(`GET API found ${results.length} resources`);
+    }
+
+    return NextResponse.json(results);
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    console.error("Get all resources API error:", error);
+
+    return NextResponse.json(
+      {
+        error: "Failed to fetch resources",
+        details: errorMessage,
+        timestamp: new Date().toISOString(),
+      },
+      { status: 500 },
+    );
+  }
+}
 
 /**
  * API route handler for search queries with phrase-awareness

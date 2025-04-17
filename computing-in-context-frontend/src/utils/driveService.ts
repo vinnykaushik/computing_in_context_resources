@@ -80,7 +80,7 @@ export async function listResourcesInDrive(folderId: string) {
     const drive = google.drive({ version: "v3", auth: auth as never });
 
     const response = await drive.files.list({
-      q: `'${folderId}' in parents and (mimeType='application/x-ipynb+json' or fileExtension='ipynb')`,
+      q: `'${folderId}' in parents and (mimeType='application/x-ipynb+json' or fileExtension='ipynb') and trashed=false`,
       fields: "files(id, name, webViewLink)",
       pageSize: 100,
       supportsAllDrives: true,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import "./globals.css";
 import ResultCard from "@/components/ResultCard";
 
@@ -25,9 +25,32 @@ export type SearchFilters = {
 export default function Home() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true); // Start with loading state
   const [filters, setFilters] = useState<SearchFilters>({});
   const [showFilters, setShowFilters] = useState(false);
+
+  useEffect(() => {
+    async function fetchAllResources() {
+      try {
+        const response = await fetch("/api/search");
+
+        if (!response.ok) {
+          throw new Error(
+            `Failed to fetch resources with status: ${response.status}`,
+          );
+        }
+
+        const data = await response.json();
+        setResults(data);
+      } catch (error) {
+        console.error("Error fetching resources:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    fetchAllResources();
+  }, []);
 
   const handleSearch = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -235,7 +258,9 @@ export default function Home() {
         {results.length > 0 ? (
           <div className="flex flex-col space-y-4">
             <p className="text-sm text-gray-500">
-              {results.length} results found
+              {query
+                ? `${results.length} results found for "${query}"`
+                : `Showing all available resources (${results.length})`}
             </p>
             {results.map((result, index) => (
               <ResultCard
@@ -247,6 +272,7 @@ export default function Home() {
                 cs_concepts={result.cs_concepts}
                 confidenceScore={result.score}
                 link={result.url}
+                displayConfidenceScore={!!query} // Only show confidence score for search results, not initial resource list
               />
             ))}
           </div>

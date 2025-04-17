@@ -6,6 +6,7 @@ type resultCardProps = {
   cs_concepts: string;
   confidenceScore: number;
   link: string;
+  displayConfidenceScore?: boolean;
 };
 
 export default function ResultCard({
@@ -16,6 +17,7 @@ export default function ResultCard({
   cs_concepts,
   confidenceScore,
   link,
+  displayConfidenceScore = true,
 }: resultCardProps) {
   const confidenceColor =
     confidenceScore >= 0.9
@@ -46,22 +48,39 @@ export default function ResultCard({
         <h2 className="group-hover:from-secondary group-hover:to-tertiary inline bg-gradient-to-l from-gray-700 to-gray-700 bg-clip-text font-mono text-2xl font-bold text-transparent transition-all duration-300 group-hover:underline group-hover:decoration-black">
           {removeExtraCharacters(title)}
         </h2>
-        <div>Language: {toTitleCase(language)}</div>
-        <div>Course Level: {course_level}</div>
-        <div>Sequence Position: {toTitleCase(context)}</div>
-        <div>Lesson Context: {toTitleCase(context)}</div>
-        <div>Concepts Covered: {toTitleCase(cs_concepts)}</div>
-        <div className="flex items-center">
-          <span className={`${textColor}`}>
-            Confidence Score: {(confidenceScore * 100).toPrecision(2)}%
-          </span>
-          <div className="ml-2 h-2 flex-1 rounded bg-gray-300">
-            <div
-              className={`h-2 rounded ${confidenceColor}`}
-              style={{ width: `${confidenceScore * 100}%` }}
-            />
-          </div>
+        <div>
+          <span className="font-bold">Language:</span> {toTitleCase(language)}
         </div>
+        <div>
+          <span className="font-bold">Course Level:</span> {course_level}
+        </div>
+        <div>
+          <span className="font-bold">Sequence Position:</span>{" "}
+          {toTitleCase(context)}
+        </div>
+        <div>
+          <span className="font-bold">Lesson Context:</span>{" "}
+          {toTitleCase(context)}
+        </div>
+        <div>
+          <span className="font-bold">Concepts Covered:</span>{" "}
+          {toTitleCase(cs_concepts)}
+        </div>
+        {displayConfidenceScore && (
+          <div className="flex items-center">
+            <span className={`${textColor}`}>
+              <span className="font-bold">Confidence Score: </span>
+              {(confidenceScore * 100).toPrecision(2)}%
+            </span>
+
+            <div className="ml-2 h-2 flex-1 rounded bg-gray-300">
+              <div
+                className={`h-2 rounded ${confidenceColor}`}
+                style={{ width: `${confidenceScore * 100}%` }}
+              />
+            </div>
+          </div>
+        )}
       </div>
     </a>
   );
