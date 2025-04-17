@@ -221,9 +221,10 @@ export default function Home() {
                   className="w-full rounded border p-2"
                 >
                   <option value="">Any level</option>
-                  <option value="beginner">Beginner</option>
-                  <option value="intermediate">Intermediate</option>
-                  <option value="advanced">Advanced</option>
+                  <option value="CS0">CS0</option>
+                  <option value="CS1">CS1</option>
+                  <option value="CS2">CS2</option>
+                  <option value="CS3">CS3</option>
                 </select>
               </div>
 
