@@ -70,7 +70,6 @@ async function embedQuery(query: string) {
  */
 export async function searchResources(query: string) {
   const db = await connectToDatabase();
-  console.log("MongoService searchResources called with db:", db);
   const resources = db.collection("resources");
   try {
     const vectorQuery = await embedQuery(query);
@@ -121,6 +120,17 @@ export async function getResourceById(id: string) {
   }
 }
 
+export async function deleteAllResources() {
+  const db = await connectToDatabase();
+  const resources = db.collection("resources");
+  try {
+    await resources.deleteMany({});
+    console.log("All resources deleted from MongoDB");
+  } catch (error) {
+    console.error("Error deleting all resources:", error);
+  }
+}
+
 export async function saveToMongoDB(
   url: string,
   content: NotebookContent | null,
@@ -162,7 +172,7 @@ export async function saveToMongoDB(
   console.log(`Saved ${url} to MongoDB as .ipynb`);
 }
 
-export async function updateNotebooksWithEmbeddings() {
+/* export async function updateNotebooksWithEmbeddings() {
   const db = await connectToDatabase();
   const collection = db.collection("resources");
   let count = 0;
@@ -204,7 +214,7 @@ export async function updateNotebooksWithEmbeddings() {
   }
 
   console.log(`Processed ${count} notebooks with embeddings and metadata`);
-}
+} */
 
 export async function exportResourcesFromMongoDB(
   output_dir = "downloaded_notebooks",

@@ -1,11 +1,11 @@
 import { OpenAI } from "openai";
 import dotenv from "dotenv";
-import { NotebookDocument, NotebookInfo } from "@/utils/types";
+import { NotebookContent, NotebookInfo } from "@/utils/types";
 import {
   downloadResourcesFromDrive,
   listResourcesInDrive,
 } from "@/utils/driveService";
-import { saveToMongoDB } from "@/utils/mongoService";
+import { deleteAllResources, saveToMongoDB } from "@/utils/mongoService";
 
 // Load environment variables
 dotenv.config();
@@ -25,11 +25,9 @@ async function processGoogleDriveNotebooks() {
   console.log(`Processing notebooks from Google Drive folder: ${FOLDER_ID}`);
 
   try {
-    // Get list of notebooks from the Drive folder
     const notebooks = await listResourcesInDrive(FOLDER_ID);
     console.log(`Found ${notebooks.length} notebooks in Google Drive folder`);
 
-    // Process each notebook
     for (const notebook of notebooks) {
       console.log(`Processing ${notebook.name} (ID: ${notebook.id})`);
 
@@ -37,32 +35,30 @@ async function processGoogleDriveNotebooks() {
         console.error(`No ID found for notebook ${notebook.name}`);
         throw Error;
       }
-      // Download the notebook content
       const content = await downloadResourcesFromDrive(notebook.id);
 
-      // Generate a URL for the notebook (using the webViewLink)
       const url =
         notebook.webViewLink ||
         `https://drive.google.com/file/d/${notebook.id}/view`;
 
       const info = await extractNotebookInfo(content);
 
-      // Save to MongoDB
       await saveToMongoDB(url, content, info);
     }
 
     console.log(
       `Successfully processed ${notebooks.length} notebooks from Google Drive`,
     );
+    process.exit(0);
   } catch (error) {
     console.error("Error processing Google Drive notebooks:", error);
   }
 }
 
 export async function extractNotebookInfo(
-  notebook: NotebookDocument,
+  content: NotebookContent,
 ): Promise<NotebookInfo> {
-  const content = notebook.content;
+  // const content = notebook.content;
   let text_content = "";
 
   // Extract all text from notebook cells
@@ -93,8 +89,8 @@ export async function extractNotebookInfo(
   try {
     const title_prompt = `
       Extract the title of this notebook content. 
-      Return only the title as a string.
-      Content: ${text_content.substring(0, 500)}
+      Return only the title in plain text. Do not surround in quotes.
+      Content: ${text_content.substring(0, 1000)}
     `;
     const response = await openai_client.chat.completions.create({
       model: "gpt-4.1-nano",
@@ -269,10 +265,24 @@ export async function extractNotebookInfo(
     course_level: level,
     cs_concepts,
     context,
-    sequence_position,
+    sequence_position: sequence_position,
     vector_embedding: embedding,
     content_sample: text_content.substring(0, 500),
   };
 }
 
-processGoogleDriveNotebooks();
+async function main() {
+  const shouldDeleteFirst = process.argv.includes("--delete");
+
+  if (shouldDeleteFirst) {
+    console.log("Deleting all resources from MongoDB...");
+    await deleteAllResources();
+    console.log("Deleted all resources from MongoDB.");
+  }
+  await processGoogleDriveNotebooks();
+}
+
+main().catch((error) => {
+  console.error("Error in main function:", error);
+  process.exit(1);
+});

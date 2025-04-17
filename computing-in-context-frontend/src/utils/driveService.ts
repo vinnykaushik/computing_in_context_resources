@@ -1,7 +1,7 @@
 import { OAuth2Client } from "google-auth-library";
 import { google } from "googleapis";
 import { Stream } from "stream";
-import { authenticate } from "@google-cloud/local-auth";
+// import { authenticate } from "@google-cloud/local-auth";
 import * as fs from "fs/promises";
 import * as path from "path";
 
@@ -22,6 +22,9 @@ export async function authorize(
   }
 
   console.log("Client is null, requesting authentication...");
+
+  const { authenticate } = await import("@google-cloud/local-auth");
+
   client = (await authenticate({
     scopes: scopes,
     keyfilePath: CREDENTIALS_PATH,
@@ -100,6 +103,7 @@ export async function downloadResourcesFromDrive(fileId: string) {
   try {
     const auth = await authorize();
     const drive = google.drive({ version: "v3", auth: auth as never });
+    console.log(`Downloading file with ID: ${fileId}`);
 
     // Download the file content
     const response = await drive.files.get(
@@ -122,9 +126,38 @@ export async function downloadResourcesFromDrive(fileId: string) {
 
     const content = await streamToString(response.data);
 
+    if (!content.trim().startsWith("{")) {
+      console.error(`File ${fileId} is not valid JSON`);
+      console.log(
+        `Content starts with: ${content.substring(0, 50).replace(/\n/g, " ")}`,
+      );
+
+      // Create a minimal valid notebook structure
+      return {
+        cells: [],
+        metadata: {
+          kernelspec: {
+            display_name: "Python 3",
+            language: "python",
+            name: "python3",
+          },
+        },
+        nbformat: 4,
+        nbformat_minor: 4,
+        raw_content: content.substring(0, 5000), // Store the raw content for analysis
+      };
+    }
+
     // Parse the notebook content as JSON
     try {
       const notebookContent = JSON.parse(content);
+
+      // Validate notebook format
+      if (!notebookContent.cells) {
+        console.warn(`File ${fileId} doesn't have 'cells' property`);
+        notebookContent.cells = [];
+      }
+
       return notebookContent;
     } catch (e) {
       console.error(`Error parsing Google Drive resource as JSON: ${e}`);

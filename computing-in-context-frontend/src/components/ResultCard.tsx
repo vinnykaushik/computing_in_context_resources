@@ -44,10 +44,11 @@ export default function ResultCard({
     <a href={link} target="_blank" rel="noreferrer">
       <div className="group relative rounded-lg bg-gray-100 p-4 shadow-md duration-300 hover:bg-gradient-to-r hover:shadow-lg hover:transition-all">
         <h2 className="group-hover:from-secondary group-hover:to-tertiary inline bg-gradient-to-l from-gray-700 to-gray-700 bg-clip-text font-mono text-2xl font-bold text-transparent transition-all duration-300 group-hover:underline group-hover:decoration-black">
-          {title.toLowerCase()}
+          {removeExtraCharacters(title)}
         </h2>
         <div>Language: {toTitleCase(language)}</div>
         <div>Course Level: {course_level}</div>
+        <div>Sequence Position: {toTitleCase(context)}</div>
         <div>Lesson Context: {toTitleCase(context)}</div>
         <div>Concepts Covered: {toTitleCase(cs_concepts)}</div>
         <div className="flex items-center">
@@ -64,6 +65,10 @@ export default function ResultCard({
       </div>
     </a>
   );
+}
+
+function removeExtraCharacters(str: string): string {
+  return str.replace(/"/g, "").trim();
 }
 
 function toTitleCase(str: string): string {
