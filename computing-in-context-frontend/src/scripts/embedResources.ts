@@ -135,7 +135,8 @@ export async function extractNotebookInfo(
       vacation planning, tuition calculation, university admissions, language games, Pac-Man game, 
       mathematical concepts.
       
-      Return a brief phrase (2-5 words) that best describes the context.
+      Return a brief phrase (2-5 words) that best describes the context. Only include the context,
+      not any additional text or explanation.
       If mathematical, specify the type of math (e.g., "number theory - Armstrong numbers").
       If game-related, specify the game type (e.g., "game - Pac-Man").
       
@@ -164,7 +165,7 @@ export async function extractNotebookInfo(
       3. Depth of application (complex applications suggest later placement)
       4. Presence of terms like "introduction", "final project", "capstone", etc.
       
-      Return ONLY ONE of these values:
+      Return ONLY ONE of these values, and nothing else:
       - "beginning" (first 20% of a course, introduces basic concepts)
       - "middle" (middle 60% of a course, builds on fundamentals)
       - "end" (final 20%, integrates multiple concepts, more complex applications)
@@ -199,8 +200,9 @@ export async function extractNotebookInfo(
   // Determine course level
   try {
     const level_prompt = `
-      Using the below information, determine the course level of this lesson. Only return one of: [CS1, CS2, CS3].
+      Using the below information, determine the course level of this lesson. Only return one of: [CS0, CS1, CS2, CS3].
 
+      CS0: A course meant to introduce students to programming. This is a course that does not require any prior programming experience.
       CS1: The first required programming course of the Computer Science major.
       CS2: The second required programming course of the Computer Science major. This should not be a class typically taken in the same term as CS1.
       CS3: The third required course of the Computer Science major. This should not be a class typically taken in the same term as CS2. NOTE: If your
@@ -230,7 +232,8 @@ export async function extractNotebookInfo(
   try {
     const concepts_prompt = `
       Extract the main Computer Science concepts from this notebook content.
-      Return only 3-7 key CS concepts as a comma-separated list.
+      Return only 3-7 key CS concepts as a comma-separated list. 
+      Do not include any introduction or explanation.
       Content: ${text_content.substring(0, 4000)}
     `;
 
