@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import "./globals.css";
 import ResultCard from "@/components/ResultCard";
+import Link from "next/link";
+import InfoModal from "@/components/InfoModal";
 
 export type SearchResult = {
   title: string;
@@ -25,14 +27,26 @@ export type SearchFilters = {
 export default function Home() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [isLoading, setIsLoading] = useState(true); // Start with loading state
+  const [isLoading, setIsLoading] = useState(true);
   const [filters, setFilters] = useState<SearchFilters>({});
   const [showFilters, setShowFilters] = useState(false);
+  const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
 
   useEffect(() => {
     async function fetchAllResources() {
+      setIsLoading(true);
       try {
-        const response = await fetch("/api/search");
+        const params = new URLSearchParams();
+
+        if (filters.language) params.append("language", filters.language);
+        if (filters.course_level)
+          params.append("course_level", filters.course_level);
+        if (filters.sequence_position)
+          params.append("sequence_position", filters.sequence_position);
+
+        const url = `/api/search${params.toString() ? `?${params.toString()}` : ""}`;
+
+        const response = await fetch(url);
 
         if (!response.ok) {
           throw new Error(
@@ -50,7 +64,7 @@ export default function Home() {
     }
 
     fetchAllResources();
-  }, []);
+  }, [filters]);
 
   const handleSearch = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -132,127 +146,188 @@ export default function Home() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col items-center p-8">
-      <h1 className="from-secondary to-tertiary mb-8 bg-gradient-to-r bg-clip-text text-3xl font-bold text-transparent">
-        Computing in Context
-      </h1>
-      {/* Search bar */}
-      <form onSubmit={handleSearch} className="mb-4 w-full">
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder='search resources... (use "quotes" for phrases)'
-              className="border-primary flex-grow rounded-full border p-2 px-4 font-mono"
-            />
-            <button
-              type="submit"
-              className="bg-primary rounded px-4 py-2 text-white hover:opacity-80"
-              disabled={isLoading}
-            >
-              {isLoading ? "Searching..." : "Search"}
-            </button>
-          </div>
-
-          {query && (
-            <div className="px-4 text-sm text-gray-600">
-              Search preview: {highlightPhrases()}
+      <Link href="/">
+        <h1 className="from-secondary to-tertiary mb-8 bg-gradient-to-r bg-clip-text text-3xl font-bold text-transparent">
+          Computing in Context
+        </h1>
+      </Link>
+      <div className="mb-4 flex w-full items-center justify-between">
+        {/* Search bar */}
+        <form onSubmit={handleSearch} className="mb-4 w-full">
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder='search resources... (use "quotes" for phrases)'
+                className="border-primary flex-grow rounded-full border p-2 px-4 font-mono"
+              />
+              <button
+                type="submit"
+                className="bg-primary rounded px-4 py-2 text-white hover:opacity-80"
+                disabled={isLoading}
+              >
+                {isLoading ? "Searching..." : "Search"}
+              </button>
+              {/* Move info button here */}
+              <button
+                onClick={(e) => {
+                  e.preventDefault(); // Prevent form submission
+                  setIsInfoModalOpen(true);
+                }}
+                className="text-secondary bg-primary flex h-10 w-10 items-center justify-center rounded-full hover:opacity-80"
+                aria-label="Information"
+                type="button" // Important to prevent form submission
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-5 w-5"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </button>
             </div>
-          )}
 
-          <div className="flex items-center justify-between px-4">
-            <button
-              type="button"
-              onClick={() => setShowFilters(!showFilters)}
-              className="text-sm text-blue-600 hover:underline"
-            >
-              {showFilters ? "Hide filters" : "Show filters"}
-            </button>
+            {query && (
+              <div className="px-4 text-sm text-gray-600">
+                Search preview: {highlightPhrases()}
+              </div>
+            )}
 
-            {Object.keys(filters).length > 0 && (
+            <div className="flex items-center justify-between px-4">
               <button
                 type="button"
-                onClick={() => setFilters({})}
-                className="text-sm text-red-500 hover:underline"
+                onClick={() => setShowFilters(!showFilters)}
+                className="text-sm text-blue-600 hover:underline"
               >
-                Clear filters
+                {showFilters ? "Hide filters" : "Show filters"}
               </button>
+
+              {Object.keys(filters).length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setFilters({})}
+                  className="text-sm text-red-500 hover:underline"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+
+            {showFilters && (
+              <div className="mt-2 grid grid-cols-2 gap-4 rounded-lg bg-gray-50 p-4">
+                {/* Language filter */}
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">
+                    Language
+                  </label>
+                  <select
+                    value={filters.language || ""}
+                    onChange={(e) =>
+                      setFilters({
+                        ...filters,
+                        language: e.target.value || undefined,
+                      })
+                    }
+                    className="w-full rounded border p-2"
+                  >
+                    <option value="">Any language</option>
+                    <option value="python">Python</option>
+                    <option value="javascript">JavaScript</option>
+                    <option value="java">Java</option>
+                  </select>
+                </div>
+
+                {/* Course level filter */}
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">
+                    Course Level
+                  </label>
+                  <select
+                    value={filters.course_level || ""}
+                    onChange={(e) =>
+                      setFilters({
+                        ...filters,
+                        course_level: e.target.value || undefined,
+                      })
+                    }
+                    className="w-full rounded border p-2"
+                  >
+                    <option value="">Any level</option>
+                    <option value="CS0">CS0</option>
+                    <option value="CS1">CS1</option>
+                    <option value="CS2">CS2</option>
+                    <option value="CS3">CS3</option>
+                  </select>
+                </div>
+
+                {/* Sequence Position filter */}
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">
+                    Sequence Position
+                  </label>
+                  <select
+                    value={filters.sequence_position || ""}
+                    onChange={(e) =>
+                      setFilters({
+                        ...filters,
+                        sequence_position: e.target.value || undefined,
+                      })
+                    }
+                    className="w-full rounded border p-2"
+                  >
+                    <option value="Beginning">Beginning</option>
+                    <option value="Middle">Middle</option>
+                    <option value="End">End</option>
+                    <option value="">Any Position</option>
+                  </select>
+                </div>
+              </div>
             )}
           </div>
+        </form>
 
-          {showFilters && (
-            <div className="mt-2 grid grid-cols-2 gap-4 rounded-lg bg-gray-50 p-4">
-              {/* Language filter */}
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
-                  Language
-                </label>
-                <select
-                  value={filters.language || ""}
-                  onChange={(e) =>
-                    setFilters({
-                      ...filters,
-                      language: e.target.value || undefined,
-                    })
-                  }
-                  className="w-full rounded border p-2"
-                >
-                  <option value="">Any language</option>
-                  <option value="python">Python</option>
-                  <option value="javascript">JavaScript</option>
-                  <option value="java">Java</option>
-                </select>
-              </div>
+        <InfoModal
+          isOpen={isInfoModalOpen}
+          onClose={() => setIsInfoModalOpen(false)}
+          title="About Computing in Context"
+        >
+          <div className="space-y-4">
+            <p>
+              Welcome to Computing in Context, a resource for computer science
+              educators looking for contextual examples and teaching materials.
+            </p>
 
-              {/* Course level filter */}
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
-                  Course Level
-                </label>
-                <select
-                  value={filters.course_level || ""}
-                  onChange={(e) =>
-                    setFilters({
-                      ...filters,
-                      course_level: e.target.value || undefined,
-                    })
-                  }
-                  className="w-full rounded border p-2"
-                >
-                  <option value="">Any level</option>
-                  <option value="CS0">CS0</option>
-                  <option value="CS1">CS1</option>
-                  <option value="CS2">CS2</option>
-                  <option value="CS3">CS3</option>
-                </select>
-              </div>
+            <p>
+              This tool helps you find programming examples and resources that
+              integrate computer science concepts with different contexts,
+              making learning more engaging and relevant.
+            </p>
 
-              {/* Sequence Position filter */}
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
-                  Sequence Position
-                </label>
-                <select
-                  value={filters.sequence_position || ""}
-                  onChange={(e) =>
-                    setFilters({
-                      ...filters,
-                      sequence_position: e.target.value || undefined,
-                    })
-                  }
-                  className="w-full rounded border p-2"
-                >
-                  <option value="Beginning">Beginning</option>
-                  <option value="Middle">Middle</option>
-                  <option value="End">End</option>
-                  <option value="">Any Position</option>
-                </select>
-              </div>
-            </div>
-          )}
-        </div>
-      </form>
+            <h3 className="mt-4 text-lg font-semibold">Search Tips:</h3>
+            <ul className="list-inside list-disc space-y-1">
+              <li>
+                Use quotation marks for exact phrase searches: &quot;data
+                structures&quot;
+              </li>
+              <li>
+                Filter results by programming language, course level, or
+                sequence position
+              </li>
+              <li>
+                Browse all resources by using filters without a search query
+              </li>
+            </ul>
+          </div>
+        </InfoModal>
+      </div>
 
       {isLoading && <p>Searching...</p>}
       <div className="w-full">
