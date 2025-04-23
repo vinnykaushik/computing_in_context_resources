@@ -120,10 +120,8 @@ export async function searchResources(
     }
 
     try {
-      // Generate phrase-aware vector embedding
       const vectorQuery = await embedQuery(query);
 
-      // Build the base search pipeline
       const searchPipeline: mongoDb.Document[] = [
         {
           $vectorSearch: {
@@ -136,18 +134,14 @@ export async function searchResources(
         },
       ];
 
-      // Add filters if provided
       if (Object.keys(filters).length > 0) {
         const filterCriteria: Record<string, string | string[]> = {};
-
-        // Process each filter field if it exists
         ["language", "course_level", "sequence_position"].forEach((field) => {
           if (filters[field]) {
             filterCriteria[field] = filters[field];
           }
         });
 
-        // Add $match stage for filters if any were specified
         if (Object.keys(filterCriteria).length > 0) {
           searchPipeline.push({ $match: filterCriteria });
         }
@@ -203,11 +197,14 @@ export async function searchResources(
   }
 }
 
-export async function getAllResources(limit: number = 20) {
+export async function getAllResources(
+  filters: Record<string, string | string[]> = {},
+  limit: number = 100,
+) {
   const db = await connectToDatabase();
   const resources = db.collection("resources");
+
   try {
-    // Verify the collection exists
     const collections = await db
       .listCollections({ name: "resources" })
       .toArray();
@@ -215,9 +212,21 @@ export async function getAllResources(limit: number = 20) {
       throw new Error("Resources collection not found in database");
     }
 
-    // Fetch resources with a limit and basic projection
+    const filterCriteria: Record<string, string | string[]> = {};
+
+    ["language", "course_level", "sequence_position"].forEach((field) => {
+      if (filters[field]) {
+        filterCriteria[field] = filters[field];
+        console.log(
+          `Applying filter to getAllResources: ${field} = ${filters[field]}`,
+        );
+      }
+    });
+
+    console.log("MongoDB query:", JSON.stringify(filterCriteria));
+
     const results = await resources
-      .find({})
+      .find(filterCriteria)
       .limit(limit)
       .project({
         title: 1,
@@ -230,9 +239,11 @@ export async function getAllResources(limit: number = 20) {
       })
       .toArray();
 
+    console.log(`Found ${results.length} resources matching filters`);
+
     return results;
   } catch (error) {
-    console.error("Error fetching all resources:", error);
+    console.error("Error fetching resources:", error);
     throw new Error(
       `Failed to fetch resources: ${error instanceof Error ? error.message : "Unknown error"}`,
     );
