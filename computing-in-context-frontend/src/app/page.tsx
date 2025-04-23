@@ -11,6 +11,7 @@ export type SearchResult = {
   url: string;
   language: string;
   course_level: string;
+  sequence_position: string;
   context: string;
   cs_concepts: string;
   snippet: string;
@@ -345,10 +346,11 @@ export default function Home() {
                 language={result.language}
                 course_level={result.course_level}
                 context={result.context}
+                sequence_position={result.sequence_position}
                 cs_concepts={result.cs_concepts}
                 confidenceScore={result.score}
                 link={result.url}
-                displayConfidenceScore={!!query} // Only show confidence score for search results, not initial resource list
+                displayConfidenceScore={!!query}
               />
             ))}
           </div>

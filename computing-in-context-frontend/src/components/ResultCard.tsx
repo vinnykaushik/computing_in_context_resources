@@ -2,6 +2,7 @@ type resultCardProps = {
   title: string;
   language: string;
   course_level: string;
+  sequence_position: string;
   context: string;
   cs_concepts: string;
   confidenceScore: number;
@@ -13,6 +14,7 @@ export default function ResultCard({
   title,
   language,
   course_level,
+  sequence_position,
   context,
   cs_concepts,
   confidenceScore,
@@ -56,7 +58,7 @@ export default function ResultCard({
         </div>
         <div>
           <span className="font-bold">Sequence Position:</span>{" "}
-          {toTitleCase(context)}
+          {toTitleCase(sequence_position)}
         </div>
         <div>
           <span className="font-bold">Lesson Context:</span>{" "}

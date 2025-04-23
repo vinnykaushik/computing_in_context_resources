@@ -40,6 +40,7 @@ export async function GET(request: Request) {
       url: doc.url || "#",
       language: doc.language || "Not specified",
       course_level: doc.course_level || "Not specified",
+      sequence_position: doc.sequence_position || "Not specified",
       context: doc.context || "Not specified",
       cs_concepts: doc.cs_concepts || "Not specified",
     }));
@@ -109,6 +110,7 @@ export async function POST(request: Request) {
       url: doc.url || "url",
       language: doc.language || "lang",
       course_level: doc.course_level || "course_level",
+      sequence_position: doc.sequence_position || "sequence_position",
       context: doc.context || "context",
       cs_concepts: doc.cs_concepts || "cs_concepts",
     }));
