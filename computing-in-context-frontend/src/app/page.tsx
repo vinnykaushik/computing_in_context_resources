@@ -72,7 +72,7 @@ export default function Home() {
     if (!query.trim()) return;
 
     setIsLoading(true);
-    setResults([]); // Clear previous results
+    setResults([]);
 
     try {
       const response = await fetch("/api/search", {
@@ -173,12 +173,12 @@ export default function Home() {
               {/* Move info button here */}
               <button
                 onClick={(e) => {
-                  e.preventDefault(); // Prevent form submission
+                  e.preventDefault();
                   setIsInfoModalOpen(true);
                 }}
                 className="text-secondary bg-primary flex h-10 w-10 items-center justify-center rounded-full hover:opacity-80"
                 aria-label="Information"
-                type="button" // Important to prevent form submission
+                type="button"
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"

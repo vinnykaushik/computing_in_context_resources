@@ -6,9 +6,28 @@ import { SearchResult } from "@/app/page";
  * GET route handler to fetch all resources
  * Used to display resources before a search is performed
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const documents = await getAllResources(20); // Limit to 20 resources
+    // Extract filter parameters from request URL
+    const url = new URL(request.url);
+    const params = url.searchParams;
+
+    const filters: Record<string, string> = {};
+
+    // Get filter values if they exist in query parameters
+    if (params.has("language")) filters.language = params.get("language")!;
+    if (params.has("course_level"))
+      filters.course_level = params.get("course_level")!;
+    if (params.has("sequence_position"))
+      filters.sequence_position = params.get("sequence_position")!;
+
+    // Log filters for debugging
+    if (process.env.NODE_ENV === "development") {
+      console.log("GET API received filters:", filters);
+    }
+
+    // Pass filters to getAllResources
+    const documents = await getAllResources(filters);
 
     if (!documents || documents.length === 0) {
       return NextResponse.json([]);
@@ -17,7 +36,7 @@ export async function GET() {
     const results: SearchResult[] = documents.map((doc) => ({
       title: doc.title || "Untitled Resource",
       snippet: doc.content || "No content preview available",
-      score: 1, // Default score since this is not a search result
+      score: 1,
       url: doc.url || "#",
       language: doc.language || "Not specified",
       course_level: doc.course_level || "Not specified",
@@ -26,7 +45,10 @@ export async function GET() {
     }));
 
     if (process.env.NODE_ENV === "development") {
-      console.log(`GET API found ${results.length} resources`);
+      console.log(
+        `GET API found ${results.length} resources with filters:`,
+        filters,
+      );
     }
 
     return NextResponse.json(results);
@@ -34,15 +56,10 @@ export async function GET() {
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
     console.error("Get all resources API error:", error);
-
-    return NextResponse.json(
-      {
-        error: "Failed to fetch resources",
-        details: errorMessage,
-        timestamp: new Date().toISOString(),
-      },
-      { status: 500 },
-    );
+    return new Response(JSON.stringify({ error: errorMessage }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 }
 
