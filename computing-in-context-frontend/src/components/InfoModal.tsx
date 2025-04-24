@@ -56,7 +56,7 @@ export default function InfoModal({
     <div className="bg-opacity-50 fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm transition-all">
       <div
         ref={modalRef}
-        className="relative max-h-[80vh] w-full max-w-lg overflow-auto rounded-lg bg-white p-6 shadow-xl"
+        className="relative max-h-[85vh] w-full max-w-lg overflow-auto rounded-lg bg-white p-6 shadow-xl"
       >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-xl font-bold">{title}</h2>

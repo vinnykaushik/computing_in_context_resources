@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import "./globals.css";
 import ResultCard from "@/components/ResultCard";
-import Link from "next/link";
 import InfoModal from "@/components/InfoModal";
 
 export type SearchResult = {
@@ -31,7 +30,15 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true);
   const [filters, setFilters] = useState<SearchFilters>({});
   const [showFilters, setShowFilters] = useState(false);
-  const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
+  const [isInfoModalOpen, setIsInfoModalOpen] = useState(true);
+
+  const resetState = () => {
+    setQuery("");
+    setResults([]);
+    setFilters({});
+    setShowFilters(false);
+    setIsLoading(true);
+  };
 
   useEffect(() => {
     async function fetchAllResources() {
@@ -147,11 +154,16 @@ export default function Home() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col items-center p-8">
-      <Link href="/">
+      <div onClick={resetState} className="cursor-pointer">
         <h1 className="from-secondary to-tertiary mb-8 bg-gradient-to-r bg-clip-text text-3xl font-bold text-transparent">
           Computing in Context
         </h1>
-      </Link>
+      </div>
+      <p className="text-md mb-4 text-center text-gray-700">
+        A tool built for computing science educators to find lessons that deal
+        with computing not solely in the abstract, but in the context of
+        real-world problems.
+      </p>
       <div className="mb-4 flex w-full items-center justify-between">
         {/* Search bar */}
         <form onSubmit={handleSearch} className="mb-4 w-full">
@@ -312,6 +324,34 @@ export default function Home() {
               making learning more engaging and relevant.
             </p>
 
+            <h3 className="mt-4 text-lg font-semibold">Fields:</h3>
+            <ul className="list-inside list-disc space-y-1">
+              <li>
+                <b>Language:</b> The programming language used in the resource.
+              </li>
+              <li>
+                <b>Course Level:</b> The course position in the intro sequence.
+                (e.g., CS0, CS1, CS2, CS3).
+              </li>
+              <li>
+                <b>Sequence Position:</b> The position of the resource in a
+                course (e.g., Beginning, Middle, End).
+              </li>
+              <li>
+                <b>Lesson Context:</b> The context in which the resource is
+                used.
+              </li>
+              <li>
+                <b>Concepts Covered:</b> The computer science concepts covered
+                in the resource.
+              </li>
+              <li>
+                <b>Confidence Score:</b> A score indicating the relevance of the
+                resource to your search query. Higher scores indicate a better
+                match.
+              </li>
+            </ul>
+
             <h3 className="mt-4 text-lg font-semibold">Search Tips:</h3>
             <ul className="list-inside list-disc space-y-1">
               <li>
@@ -324,6 +364,18 @@ export default function Home() {
               </li>
               <li>
                 Browse all resources by using filters without a search query
+              </li>
+              <li>
+                Click on a resource to view more details and access the original
+                content
+              </li>
+              <li>
+                Click the Computing in Context logo to reset a search and
+                filters
+              </li>
+              <li>
+                To bring this panel back, click the info button next to the
+                search bar at any time
               </li>
             </ul>
           </div>

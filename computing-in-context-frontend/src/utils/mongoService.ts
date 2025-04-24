@@ -3,7 +3,6 @@ import { MongoClient } from "mongodb";
 import * as mongoDb from "mongodb";
 import { OpenAI } from "openai";
 import { NotebookDocument, NotebookContent, NotebookInfo } from "./types";
-import { extractNotebookInfo } from "@/scripts/embedResources";
 import { createEnhancedQueryText, logQueryParsing } from "./phraseAwareSearch";
 import * as fs from "fs";
 import * as path from "path";
@@ -289,7 +288,6 @@ export async function saveToMongoDB(
 
   if (typeof content !== "object") {
     try {
-      // Try to parse as JSON if it's a string
       content = JSON.parse(content);
     } catch (e) {
       console.log(`Content for ${url} is not a valid notebook format`, e);
