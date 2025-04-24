@@ -36,10 +36,14 @@ async function processGoogleDriveNotebooks() {
         throw Error;
       }
       const content = await downloadResourcesFromDrive(notebook.id);
-
-      const url =
-        notebook.webViewLink ||
-        `https://drive.google.com/file/d/${notebook.id}/view`;
+      let url;
+      if (notebook.name?.endsWith(".ipynb")) {
+        url = "https://colab.research.google.com/drive/" + notebook.id;
+      } else {
+        url =
+          notebook.webViewLink ||
+          `https://drive.google.com/file/d/${notebook.id}/view`;
+      }
 
       const info = await extractNotebookInfo(content);
 
