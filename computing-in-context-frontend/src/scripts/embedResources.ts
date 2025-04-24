@@ -1,295 +1,103 @@
-import { OpenAI } from "openai";
-import dotenv from "dotenv";
-import { NotebookContent, NotebookInfo } from "@/utils/types";
-import {
-  downloadResourcesFromDrive,
-  listResourcesInDrive,
-} from "@/utils/driveService";
-import { deleteAllResources, saveToMongoDB } from "@/utils/mongoService";
+import { ObjectId } from "mongodb";
 
-// Load environment variables
-dotenv.config();
-const EMBEDDING_MODEL = "text-embedding-3-large";
-const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
+// MongoDB Types
+export type ResourceDocument = {
+  _id?: ObjectId;
+  url: string;
+  title: string;
+  content: FileContent;
+  date_saved: Date;
+  language?: string;
+  course_level?: string;
+  cs_concepts?: string;
+  context?: string;
+  sequence_position?: string;
+  vector_embedding?: number[];
+  content_sample?: string;
+  metadata_processed?: boolean;
+  file_type?: string;
+};
 
-// Set up OpenAI API client
-const openai_client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// For backward compatibility, keep NotebookDocument type
+export type NotebookDocument = ResourceDocument;
 
-async function processGoogleDriveNotebooks() {
-  if (!FOLDER_ID) {
-    console.error("Missing Google Drive folder ID in environment variables.");
-    return;
-  }
-  console.log(`Processing notebooks from Google Drive folder: ${FOLDER_ID}`);
+// Generic type for file content
+export type FileContent =
+  | NotebookContent
+  | TextContent
+  | BinaryContent
+  | Record<string, unknown>;
 
-  try {
-    const notebooks = await listResourcesInDrive(FOLDER_ID);
-    console.log(`Found ${notebooks.length} notebooks in Google Drive folder`);
+// Interface for Jupyter notebook content
+export type NotebookContent = {
+  cells?: NotebookCell[];
+  metadata?: Record<string, unknown>;
+  nbformat?: number;
+  nbformat_minor?: number;
+};
 
-    for (const notebook of notebooks) {
-      console.log(`Processing ${notebook.name} (ID: ${notebook.id})`);
+// Interface for text-based content
+export type TextContent = string;
 
-      if (!notebook.id) {
-        console.error(`No ID found for notebook ${notebook.name}`);
-        throw Error;
-      }
-      const content = await downloadResourcesFromDrive(notebook.id);
-      let url;
-      if (notebook.name?.endsWith(".ipynb")) {
-        url = "https://colab.research.google.com/drive/" + notebook.id;
-      } else {
-        url =
-          notebook.webViewLink ||
-          `https://drive.google.com/file/d/${notebook.id}/view`;
-      }
+// Interface for binary content
+export type BinaryContent = {
+  data: Uint8Array | Buffer;
+  mimeType?: string;
+};
 
-      const info = await extractNotebookInfo(content);
+export type NotebookCell = {
+  cell_type: string;
+  source: string | string[];
+  metadata?: Record<string, unknown>;
+  execution_count?: number | null;
+  outputs?: unknown[];
+};
 
-      await saveToMongoDB(url, content, info);
-    }
+export type FileInfo = {
+  title: string;
+  language: string;
+  course_level: string;
+  cs_concepts: string;
+  context: string;
+  sequence_position: string;
+  vector_embedding: number[] | null;
+  content_sample: string;
+  file_type: string;
+};
 
-    console.log(
-      `Successfully processed ${notebooks.length} notebooks from Google Drive`,
-    );
-    process.exit(0);
-  } catch (error) {
-    console.error("Error processing Google Drive notebooks:", error);
-  }
-}
+// For backward compatibility, keep NotebookInfo type
+export type NotebookInfo = FileInfo;
 
-export async function extractNotebookInfo(
-  content: NotebookContent,
-): Promise<NotebookInfo> {
-  // const content = notebook.content;
-  let text_content = "";
+export type SearchOptions = {
+  query_text?: string;
+  language?: string;
+  course_level?: string;
+  context?: string;
+  sequence_position?: string;
+  file_type?: string;
+};
 
-  // Extract all text from notebook cells
-  if (content.cells) {
-    for (const cell of content.cells) {
-      if (cell.cell_type === "markdown") {
-        text_content += Array.isArray(cell.source)
-          ? cell.source.join(" ")
-          : cell.source;
-      } else if (cell.cell_type === "code") {
-        const code = Array.isArray(cell.source)
-          ? cell.source.join(" ")
-          : cell.source;
-        text_content += ` ${code}`;
-      }
-    }
-  }
+export type SearchResult = {
+  url: string;
+  language?: string;
+  course_level?: string;
+  context?: string;
+  sequence_position?: string;
+  cs_concepts?: string;
+  content_sample?: string;
+  score?: number;
+  file_type?: string;
+  title?: string;
+};
 
-  let title = "";
-  let language = "";
-  let context = "general programming";
-  let sequence_position = "middle";
-  let level = "CS1";
-  let cs_concepts = "";
-  let embedding = null;
-
-  // Extract title
-  try {
-    const title_prompt = `
-      Extract the title of this notebook content. 
-      Return only the title in plain text. Do not surround in quotes.
-      Content: ${text_content.substring(0, 1000)}
-    `;
-    const response = await openai_client.chat.completions.create({
-      model: "gpt-4.1-nano",
-      messages: [{ role: "user", content: title_prompt }],
-    });
-    if (!response.choices[0].message.content) {
-      throw new Error("No choices returned from OpenAI API");
-    }
-    title = response.choices[0].message.content.trim();
-  } catch (e) {
-    console.error(`Error extracting title: ${e}`);
-  }
-
-  // Extract language information
-  try {
-    const language_prompt = `
-      Determine the programming language used in this notebook content.
-      Return only the language name. If multiple, separate with commas.
-      Content: ${text_content.substring(0, 4000)}
-    `;
-
-    const response = await openai_client.chat.completions.create({
-      model: "gpt-4.1-nano",
-      messages: [{ role: "user", content: language_prompt }],
-    });
-
-    if (!response.choices[0].message.content) {
-      throw new Error("No choices returned from OpenAI API");
-    }
-
-    language = response.choices[0].message.content.trim().toLowerCase();
-  } catch (e) {
-    console.error(`Error extracting language: ${e}`);
-  }
-
-  // Extract context/topic information
-  try {
-    const context_prompt = `
-      Identify the real-world context or topic of this notebook. 
-      Examples include: insurance verification, movie theatre admission, blood donor eligibility, 
-      airline systems, smartphone pricing, robotics competition, fashion rating, virtual pet game, 
-      vacation planning, tuition calculation, university admissions, language games, Pac-Man game, 
-      mathematical concepts.
-      
-      Return a brief phrase (2-5 words) that best describes the context. Only include the context,
-      not any additional text or explanation.
-      If mathematical, specify the type of math (e.g., "number theory - Armstrong numbers").
-      If game-related, specify the game type (e.g., "game - Pac-Man").
-      
-      Content: ${text_content.substring(0, 4000)}
-    `;
-
-    const response = await openai_client.chat.completions.create({
-      model: "o3-mini",
-      messages: [{ role: "user", content: context_prompt }],
-    });
-    if (!response.choices[0].message.content) {
-      throw new Error("No choices returned from OpenAI API");
-    }
-    context = response.choices[0].message.content.trim();
-  } catch (e) {
-    console.error(`Error extracting context: ${e}`);
-  }
-
-  // Determine sequence position
-  try {
-    const sequence_prompt = `
-      Analyze this notebook and determine where it would likely appear in a course sequence.
-      Consider:
-      1. Complexity of concepts (basic concepts suggest early placement)
-      2. References to previous knowledge (more references suggest later placement)
-      3. Depth of application (complex applications suggest later placement)
-      4. Presence of terms like "introduction", "final project", "capstone", etc.
-      
-      Return ONLY ONE of these values, and nothing else:
-      - "beginning" (first 20% of a course, introduces basic concepts)
-      - "middle" (middle 60% of a course, builds on fundamentals)
-      - "end" (final 20%, integrates multiple concepts, more complex applications)
-      
-      Content: ${text_content.substring(0, 4000)}
-    `;
-
-    const response = await openai_client.chat.completions.create({
-      model: "o3-mini",
-      messages: [{ role: "user", content: sequence_prompt }],
-    });
-
-    if (!response.choices[0].message.content) {
-      throw new Error("No choices returned from OpenAI API");
-    }
-    sequence_position = response.choices[0].message.content
-      .trim()
-      .toLowerCase();
-
-    // Normalize response to one of our three categories
-    if (sequence_position.includes("beginning")) {
-      sequence_position = "beginning";
-    } else if (sequence_position.includes("end")) {
-      sequence_position = "end";
-    } else {
-      sequence_position = "middle";
-    }
-  } catch (e) {
-    console.error(`Error determining sequence position: ${e}`);
-  }
-
-  // Determine course level
-  try {
-    const level_prompt = `
-      Using the below information, determine the course level of this lesson. Only return one of: [CS0, CS1, CS2, CS3].
-
-      CS0: A course meant to introduce students to programming. This is a course that does not require any prior programming experience.
-      CS1: The first required programming course of the Computer Science major.
-      CS2: The second required programming course of the Computer Science major. This should not be a class typically taken in the same term as CS1.
-      CS3: The third required course of the Computer Science major. This should not be a class typically taken in the same term as CS2. NOTE: If your
-      department or institution does not have a required third course in the Computer Science major – that is, if there is more than one course that 
-      Computer Science majors can take immediately following the required CS2 course – provide information about the required Computer Science course 
-      that most students who are Computer Science majors take after CS2 (e.g., Data Structures). Be sure to reference the same course for CS3 across all reporting periods.
-    `;
-
-    const response = await openai_client.chat.completions.create({
-      model: "o3-mini",
-      messages: [{ role: "user", content: level_prompt }],
-    });
-
-    if (!response.choices[0].message.content) {
-      throw new Error("No choices returned from OpenAI API");
-    }
-
-    level = response.choices[0].message.content.trim().toUpperCase();
-    if (!["CS1", "CS2", "CS3"].includes(level)) {
-      level = "CS1"; // Default to CS1 if we can't determine
-    }
-  } catch (e) {
-    console.error(`Error determining course level: ${e}`);
-  }
-
-  // Extract CS concepts
-  try {
-    const concepts_prompt = `
-      Extract the main Computer Science concepts from this notebook content.
-      Return only 3-7 key CS concepts as a comma-separated list. 
-      Do not include any introduction or explanation.
-      Content: ${text_content.substring(0, 4000)}
-    `;
-
-    const response = await openai_client.chat.completions.create({
-      model: "gpt-4.1-nano",
-      messages: [{ role: "user", content: concepts_prompt }],
-    });
-
-    if (!response.choices[0].message.content) {
-      throw new Error("No choices returned from OpenAI API");
-    }
-
-    cs_concepts = response.choices[0].message.content.trim();
-  } catch (e) {
-    console.error(`Error extracting CS concepts: ${e}`);
-  }
-
-  // Generate embedding for the content
-  try {
-    const embedding_response = await openai_client.embeddings.create({
-      input: text_content.substring(0, 8192),
-      model: EMBEDDING_MODEL,
-    });
-    embedding = embedding_response.data[0].embedding;
-  } catch (e) {
-    console.error(`Error generating embedding: ${e}`);
-  }
-
-  return {
-    title,
-    language,
-    course_level: level,
-    cs_concepts,
-    context,
-    sequence_position: sequence_position,
-    vector_embedding: embedding,
-    content_sample: text_content.substring(0, 500),
-  };
-}
-
-async function main() {
-  const shouldDeleteFirst = process.argv.includes("--delete");
-
-  if (shouldDeleteFirst) {
-    console.log("Deleting all resources from MongoDB...");
-    await deleteAllResources();
-    console.log("Deleted all resources from MongoDB.");
-  }
-  await processGoogleDriveNotebooks();
-}
-
-main().catch((error) => {
-  console.error("Error in main function:", error);
-  process.exit(1);
-});
+// Google Drive file information
+export type DriveFileInfo = {
+  id: string;
+  name: string;
+  mimeType?: string;
+  webViewLink?: string;
+  createdTime?: string;
+  modifiedTime?: string;
+  size?: number;
+  iconLink?: string;
+};

@@ -14,8 +14,12 @@
     "@google-cloud/local-auth": "^3.0.1",
     "@nteract/commutable": "^7.5.1",
     "axios": "^1.8.4",
+    "cheerio": "^1.0.0",
     "dotenv": "^16.4.7",
     "fs": "0.0.1-security",
+    "gaxios": "^5.1.3",
+    "google-auth-library": "8.9.0",
+    "googleapis": "^148.0.0",
     "katex": "^0.16.21",
     "marked": "^15.0.8",
     "mongodb": "^6.15.0",
@@ -47,5 +51,10 @@
     "plugins": [
       "prettier-plugin-tailwindcss"
     ]
+  },
+  "pnpm": {
+    "overrides": {
+      "google-auth-library": "8.9.0"
+    }
   }
 }

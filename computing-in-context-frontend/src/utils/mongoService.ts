@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 import { MongoClient } from "mongodb";
 import * as mongoDb from "mongodb";
 import { OpenAI } from "openai";
-import { NotebookDocument, NotebookContent, NotebookInfo } from "./types";
+import { ResourceDocument, FileContent, FileInfo } from "./types";
 import { createEnhancedQueryText, logQueryParsing } from "./phraseAwareSearch";
 import * as fs from "fs";
 import * as path from "path";
@@ -134,16 +134,25 @@ export async function searchResources(
       ];
 
       if (Object.keys(filters).length > 0) {
-        const filterCriteria: Record<string, string | string[]> = {};
-        ["language", "course_level", "sequence_position"].forEach((field) => {
-          if (filters[field]) {
-            if (field === "sequence_position") {
-              filterCriteria[field] = String(filters[field]).toLowerCase();
-            } else {
-              filterCriteria[field] = filters[field];
+        const filterCriteria: Record<string, string | string[] | object> = {};
+
+        // Handle standard filters
+        ["language", "course_level", "sequence_position", "file_type"].forEach(
+          (field) => {
+            if (filters[field]) {
+              if (field === "sequence_position") {
+                filterCriteria[field] = String(filters[field]).toLowerCase();
+              } else {
+                filterCriteria[field] = filters[field];
+              }
             }
-          }
-        });
+          },
+        );
+
+        // Add context search if provided
+        if (filters.context && typeof filters.context === "string") {
+          filterCriteria.context = { $regex: filters.context, $options: "i" };
+        }
 
         if (Object.keys(filterCriteria).length > 0) {
           searchPipeline.push({ $match: filterCriteria });
@@ -162,6 +171,7 @@ export async function searchResources(
           sequence_position: 1,
           cs_concepts: 1,
           vector_embedding: 1,
+          file_type: 1,
           score: { $meta: "vectorSearchScore" },
         },
       });
@@ -216,17 +226,25 @@ export async function getAllResources(
       throw new Error("Resources collection not found in database");
     }
 
-    const filterCriteria: Record<string, string | string[]> = {};
+    const filterCriteria: Record<string, string | string[] | object> = {};
 
-    ["language", "course_level", "sequence_position"].forEach((field) => {
-      if (filters[field]) {
-        if (field === "sequence_position") {
-          filterCriteria[field] = String(filters[field]).toLowerCase();
-        } else {
-          filterCriteria[field] = filters[field];
+    // Handle standard filters
+    ["language", "course_level", "sequence_position", "file_type"].forEach(
+      (field) => {
+        if (filters[field]) {
+          if (field === "sequence_position") {
+            filterCriteria[field] = String(filters[field]).toLowerCase();
+          } else {
+            filterCriteria[field] = filters[field];
+          }
         }
-      }
-    });
+      },
+    );
+
+    // Add context search if provided
+    if (filters.context && typeof filters.context === "string") {
+      filterCriteria.context = { $regex: filters.context, $options: "i" };
+    }
 
     console.log("MongoDB query:", JSON.stringify(filterCriteria));
 
@@ -242,6 +260,7 @@ export async function getAllResources(
         sequence_position: 1,
         context: 1,
         cs_concepts: 1,
+        file_type: 1,
       })
       .toArray();
 
@@ -281,92 +300,103 @@ export async function deleteAllResources() {
   }
 }
 
+/**
+ * Get file extension from URL or filename
+ * @param url URL or filename
+ * @returns File extension (without dot)
+ */
+function getFileExtension(url: string): string {
+  // Try to extract extension from the URL path
+  const urlPath = url.split("?")[0]; // Remove query parameters
+  const extension = path.extname(urlPath).toLowerCase();
+
+  if (extension) {
+    return extension.substring(1); // Remove the dot
+  }
+
+  // If no extension found in URL, check for known patterns
+  if (url.includes("colab.research.google.com")) {
+    return "ipynb";
+  }
+
+  return ""; // No extension found
+}
+
+/**
+ * Saves a resource to MongoDB
+ * @param url The URL of the resource
+ * @param content The content of the resource
+ * @param info The extracted info from the resource
+ */
 export async function saveToMongoDB(
   url: string,
-  content: NotebookContent | null,
-  info: NotebookInfo,
+  content: FileContent,
+  info: FileInfo,
 ) {
   const db = await connectToDatabase();
   const resources = db.collection("resources");
   if (!content) {
-    console.log(`Failed to save ${url} to MongoDB`);
+    console.log(`Failed to save ${url} to MongoDB: Content is null`);
     return;
   }
 
-  if (typeof content !== "object") {
+  // For Jupyter notebooks, ensure proper format
+  const fileType = info.file_type || getFileExtension(url);
+  let processedContent: FileContent = content;
+
+  if (fileType === "notebook" || fileType === "ipynb") {
+    if (typeof content === "string") {
+      try {
+        processedContent = JSON.parse(content);
+      } catch (e) {
+        console.log(`Content for ${url} is not a valid notebook format`, e);
+        // Store as string if parsing fails
+        processedContent = { text: content as string };
+      }
+    }
+  } else if (typeof content === "string") {
+    // Store text content directly
+    processedContent = content;
+  } else if (Buffer.isBuffer(content)) {
+    // Convert Buffer to string for storage
+    processedContent = content.toString("base64");
+  } else if (typeof content === "object" && !Array.isArray(content)) {
+    // Keep objects as is
+    processedContent = content;
+  } else {
+    // Try to convert anything else to string
     try {
-      content = JSON.parse(content);
+      processedContent = JSON.stringify(content);
     } catch (e) {
-      console.log(`Content for ${url} is not a valid notebook format`, e);
+      console.log(`Failed to stringify content for ${url}`, e);
       return;
     }
   }
 
-  const notebook: NotebookDocument = {
+  const resource: ResourceDocument = {
     url,
-    content: content as NotebookContent,
-    language: info.language,
+    content: processedContent,
     title: info.title,
+    language: info.language,
     course_level: info.course_level,
     cs_concepts: info.cs_concepts,
     context: info.context,
     sequence_position: info.sequence_position,
     vector_embedding: info.vector_embedding ?? undefined,
     content_sample: info.content_sample,
+    file_type: info.file_type || fileType,
     metadata_processed: true,
     date_saved: new Date(),
   };
 
-  await resources.insertOne(notebook);
-  console.log(`Saved ${url} to MongoDB as .ipynb`);
+  await resources.insertOne(resource);
+  console.log(
+    `Saved ${url} to MongoDB as ${resource.file_type || "unknown type"}`,
+  );
 }
 
-/* export async function updateNotebooksWithEmbeddings() {
-  const db = await connectToDatabase();
-  const collection = db.collection("resources");
-  let count = 0;
-
-  // Find all notebooks
-  const all_notebooks = (await collection
-    .find({})
-    .toArray()) as NotebookDocument[];
-
-  for (const notebook of all_notebooks) {
-    try {
-      const info = await extractNotebookInfo(notebook);
-
-      // Update the document with new info
-      await collection.updateOne(
-        { _id: notebook._id },
-        {
-          $set: {
-            language: info.language,
-            title: info.title,
-            course_level: info.course_level,
-            cs_concepts: info.cs_concepts,
-            context: info.context,
-            sequence_position: info.sequence_position,
-            vector_embedding: info.vector_embedding ?? undefined,
-            content_sample: info.content_sample,
-            metadata_processed: true,
-          },
-        },
-      );
-
-      console.log(`Processed: ${notebook.url}`);
-      count++;
-    } catch (e) {
-      console.error(
-        `Error processing notebook ${notebook.url || "unknown"}: ${e}`,
-      );
-    }
-  }
-
-  console.log(`Processed ${count} notebooks with embeddings and metadata`);
-} */
-
 export async function exportResourcesFromMongoDB(
-  output_dir = "downloaded_notebooks",
+  output_dir = "downloaded_resources",
 ) {
   const db = await connectToDatabase();
   const resources = db.collection("resources");
@@ -377,20 +407,33 @@ export async function exportResourcesFromMongoDB(
     console.log(`Created output directory: ${output_dir}`);
   }
 
-  // Query all notebooks from MongoDB
-  const all_notebooks = await resources.find({}).toArray();
+  // Query all resources from MongoDB
+  const all_resources = await resources.find({}).toArray();
   let count = 0;
 
-  for (const notebook of all_notebooks) {
+  for (const resource of all_resources) {
     try {
       // Extract a filename from the URL
-      const url = notebook.url;
+      const url = resource.url;
       let filename = "";
+      let extension = resource.file_type || "";
 
+      // Add file extension based on file_type if not already present
+      if (extension === "notebook") {
+        extension = "ipynb";
+      } else if (extension === "javascript") {
+        extension = "js";
+      } else if (extension === "typescript") {
+        extension = "ts";
+      } else if (extension === "python") {
+        extension = "py";
+      }
+
+      // Generate an appropriate filename
       if (url.includes("colab.research.google.com")) {
         // For Colab, use the file ID as the filename
         const file_id = url.split("/").pop() || "";
-        filename = `colab_${file_id}.ipynb`;
+        filename = `colab_${file_id}`;
       } else if (url.includes("github.com")) {
         // For GitHub, use the repo and filename
         const parts = url.replace("https://github.com/", "").split("/");
@@ -400,30 +443,47 @@ export async function exportResourcesFromMongoDB(
           // Clean up filename if it contains 'blob'
           filename = filename.replace("blob_", "");
         }
+      } else if (url.includes("drive.google.com")) {
+        // For Google Drive, use the file ID
+        const file_id = url.match(/[-\w]{25,}/) || ["unknown"];
+        filename = `drive_${file_id[0]}`;
       } else {
         // Generic fallback
-        filename = `notebook_${count}.ipynb`;
+        filename = `resource_${count}`;
       }
 
-      // Make sure the filename ends with .ipynb
-      if (!filename.endsWith(".ipynb")) {
-        filename += ".ipynb";
+      // Add extension if not already present in filename
+      if (extension && !filename.endsWith(`.${extension}`)) {
+        filename += `.${extension}`;
+      } else if (!filename.includes(".")) {
+        // Default to .txt if no extension can be determined
+        filename += ".txt";
       }
 
       // Create full path
       const filepath = path.join(output_dir, filename);
 
-      // Write notebook content to file
-      fs.writeFileSync(filepath, JSON.stringify(notebook.content, null, 2), {
-        encoding: "utf-8",
-      });
+      // Write content to file
+      let fileContent: string;
+
+      if (typeof resource.content === "string") {
+        fileContent = resource.content;
+      } else if (Buffer.isBuffer(resource.content)) {
+        fileContent = resource.content.toString("utf-8");
+      } else {
+        fileContent = JSON.stringify(resource.content, null, 2);
+      }
+
+      fs.writeFileSync(filepath, fileContent, { encoding: "utf-8" });
 
       console.log(`Exported: ${filepath}`);
       count++;
     } catch (e) {
-      console.error(`Error exporting notebook ${count}: ${e}`);
+      console.error(
+        `Error exporting resource ${count}: ${e instanceof Error ? e.message : String(e)}`,
+      );
     }
   }
 
-  console.log(`Exported ${count} notebooks to ${output_dir} directory`);
+  console.log(`Exported ${count} resources to ${output_dir} directory`);
 }

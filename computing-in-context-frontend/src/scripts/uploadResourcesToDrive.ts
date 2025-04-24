@@ -6,6 +6,8 @@ import { OAuth2Client } from "google-auth-library";
 import { Readable } from "stream";
 import * as dotenv from "dotenv";
 import { authorize } from "@/utils/driveService";
+import * as path from "path";
+import * as fs from "fs";
 
 // If modifying these scopes, delete token.json.
 dotenv.config();
@@ -15,39 +17,280 @@ const SCOPES = [
 ];
 const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
 
+// Define allowed resource source types and their configs
+interface ResourceSourceConfig {
+  convertUrlFunction: (url: string) => string;
+  requiresAuth: boolean;
+  acceptedFileTypes: string[]; // extensions without the dot
+}
+
+// Configuration for supported source types
+const resourceSources: Record<string, ResourceSourceConfig> = {
+  "github.com": {
+    convertUrlFunction: (url: string) =>
+      url
+        .replace("github.com", "raw.githubusercontent.com")
+        .replace("/blob/", "/"),
+    requiresAuth: false,
+    acceptedFileTypes: [
+      "ipynb",
+      "py",
+      "js",
+      "ts",
+      "html",
+      "css",
+      "md",
+      "json",
+      "csv",
+      "xml",
+      "r",
+      "sh",
+      "txt",
+      "pdf",
+      "doc",
+      "docx",
+      "ppt",
+      "pptx",
+      "xls",
+      "xlsx",
+      "jpg",
+      "jpeg",
+      "png",
+      "gif",
+      "svg",
+    ],
+  },
+  "colab.research.google.com": {
+    convertUrlFunction: (url: string) => url, // No conversion needed
+    requiresAuth: true, // Requires Google authentication
+    acceptedFileTypes: ["ipynb"],
+  },
+  "drive.google.com": {
+    convertUrlFunction: (url: string) => url, // No conversion needed
+    requiresAuth: true, // Requires Google authentication
+    acceptedFileTypes: ["*"], // All file types
+  },
+  "gist.github.com": {
+    convertUrlFunction: (url: string) => {
+      // Convert gist URL to raw content URL
+      const parts = url.split("/");
+      if (parts.length >= 5) {
+        // Format: https://gist.github.com/username/gistid
+        const username = parts[3];
+        const gistId = parts[4].split("?")[0]; // Remove any query params
+        // If specific file is in the URL, use it, otherwise return the gist API URL
+        if (parts.length >= 6 && parts[5]) {
+          return `https://gist.githubusercontent.com/${username}/${gistId}/raw/${parts[5]}`;
+        } else {
+          return `https://api.github.com/gists/${gistId}`;
+        }
+      }
+      return url; // Return original if can't be converted
+    },
+    requiresAuth: false,
+    acceptedFileTypes: ["*"], // All file types
+  },
+};
+
 /**
- * Downloads a file from a GitHub URL and uploads it to Google Drive.
+ * Maps file extensions to MIME types
+ */
+const MIME_TYPES: Record<string, string> = {
+  ipynb: "application/x-ipynb+json",
+  py: "text/x-python",
+  js: "application/javascript",
+  ts: "application/typescript",
+  html: "text/html",
+  css: "text/css",
+  txt: "text/plain",
+  md: "text/markdown",
+  json: "application/json",
+  csv: "text/csv",
+  xml: "application/xml",
+  pdf: "application/pdf",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ppt: "application/vnd.ms-powerpoint",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  gif: "image/gif",
+  svg: "image/svg+xml",
+};
+
+/**
+ * Gets the appropriate MIME type based on file extension
  *
- * @param url the GitHub URL to download the file from
+ * @param fileName the name of the file
+ * @returns {string} the MIME type for the file
+ */
+function getMimeType(fileName: string): string {
+  const extension = path.extname(fileName).toLowerCase();
+  const ext = extension.substring(1); // Remove the dot
+
+  return MIME_TYPES[ext] || "application/octet-stream"; // Default to binary stream if unknown
+}
+
+/**
+ * Identifies the source type from a URL
+ *
+ * @param url URL to analyze
+ * @returns Source type key or null if not supported
+ */
+function getSourceType(url: string): string | null {
+  if (!url) return null;
+
+  for (const source in resourceSources) {
+    if (url.includes(source)) {
+      return source;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Extracts filename from a URL
+ *
+ * @param url URL to extract filename from
+ * @returns Filename or null if not found
+ */
+function extractFilename(url: string): string | null {
+  // Try to extract filename from the URL path
+  try {
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname;
+    const segments = pathname.split("/");
+    const lastSegment = segments[segments.length - 1];
+
+    // Check if last segment contains a filename with extension
+    if (lastSegment && lastSegment.includes(".")) {
+      return lastSegment;
+    }
+
+    // Special handling for specific sources
+    const sourceType = getSourceType(url);
+    if (sourceType === "colab.research.google.com") {
+      const fileId = segments[segments.length - 1];
+      return `colab_notebook_${fileId}.ipynb`;
+    } else if (sourceType === "drive.google.com") {
+      // Extract file ID from URL
+      const matches = url.match(/[-\w]{25,}/);
+      const fileId = matches ? matches[0] : "unknown";
+      return `drive_file_${fileId}`;
+    }
+  } catch (e) {
+    console.error(`Error extracting filename from URL: ${url}`, e);
+  }
+
+  return null;
+}
+
+/**
+ * Checks if a file exists on the local filesystem
+ *
+ * @param filePath Path to check
+ * @returns Promise that resolves to true if file exists, false otherwise
+ */
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.promises.access(filePath, fs.constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Downloads a file from a URL to local filesystem
+ *
+ * @param url URL to download from
+ * @param outputPath Path to save file to
+ * @returns Promise that resolves when download is complete
+ */
+async function downloadToLocalFile(
+  url: string,
+  outputPath: string,
+): Promise<void> {
+  try {
+    const response = await axios.get(url, { responseType: "arraybuffer" });
+    await fs.promises.writeFile(outputPath, Buffer.from(response.data));
+    console.log(`Downloaded ${url} to ${outputPath}`);
+  } catch (error) {
+    console.error(`Error downloading ${url} to ${outputPath}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Downloads a file from a URL and uploads it to Google Drive.
+ *
+ * @param url the URL to download the file from
  * @param authClient the authorized OAuth2 client to use for Google Drive API
+ * @param folderId the ID of the folder to upload to
  * @returns {Promise<void>} a promise that resolves when the file is downloaded and uploaded to Google Drive
  */
-async function downloadFileFromGitHub(
+async function downloadFileAndUploadToDrive(
   url: string,
   authClient?: OAuth2Client,
   folderId?: string,
 ): Promise<void> {
-  try {
-    if (url.includes("github.com")) {
-      // Convert GitHub URL to raw content URL if needed
-      let rawUrl = url;
-      if (
-        url.includes("github.com") &&
-        !url.includes("raw.githubusercontent.com")
-      ) {
-        rawUrl = url
-          .replace("github.com", "raw.githubusercontent.com")
-          .replace("/blob/", "/");
-      }
+  if (!authClient) {
+    console.error("No auth client provided for Google Drive upload");
+    return;
+  }
 
-      console.log(`Downloading file from ${rawUrl}`);
-      const response = await axios.get(rawUrl, { responseType: "arraybuffer" });
-      const fileStream = Readable.from(Buffer.from(response.data));
-      const fileName = url.split("/").pop();
-      if (authClient) {
-        uploadToDrive(authClient, fileStream, fileName, folderId);
+  try {
+    // Check if URL is from a supported source
+    const sourceType = getSourceType(url);
+    if (!sourceType) {
+      console.error(`Unsupported source URL: ${url}`);
+      return;
+    }
+
+    const sourceConfig = resourceSources[sourceType];
+
+    // Convert URL if needed
+    const downloadUrl = sourceConfig.convertUrlFunction(url);
+    console.log(`Downloading from ${sourceType}: ${downloadUrl}`);
+
+    // Download the file
+    const response = await axios.get(downloadUrl, {
+      responseType: "arraybuffer",
+      headers: {
+        // Add GitHub token if available and it's a GitHub URL
+        ...(process.env.GITHUB_TOKEN && sourceType.includes("github.com")
+          ? { Authorization: `token ${process.env.GITHUB_TOKEN}` }
+          : {}),
+      },
+    });
+
+    // Determine filename
+    let fileName =
+      extractFilename(url) || url.split("/").pop() || "unknown_file";
+
+    // Check if this is a HTML response (which could be an auth page)
+    const contentType = response.headers["content-type"];
+    if (contentType && contentType.includes("text/html")) {
+      const content = Buffer.from(response.data).toString("utf8");
+      if (
+        content.toLowerCase().includes("sign in") ||
+        content.toLowerCase().includes("log in") ||
+        content.toLowerCase().includes("authentication")
+      ) {
+        console.log(`Authentication required for ${url}. Skipping.`);
+        return;
       }
     }
+
+    // Create a readable stream from the response
+    const fileStream = Readable.from(Buffer.from(response.data));
+
+    // Upload to Drive
+    await uploadToDrive(authClient, fileStream, fileName, folderId);
   } catch (error) {
     console.error(`Error downloading/uploading ${url}:`, error);
   }
@@ -69,7 +312,7 @@ export async function deleteAllFilesInFolder(
     return;
   }
 
-  const drive = google.drive({ version: "v3", auth: authClient as never });
+  const drive = google.drive({ version: "v3", auth: authClient as any });
   console.log(`Preparing to delete all files in folder: ${folderId}`);
 
   try {
@@ -95,7 +338,7 @@ export async function deleteAllFilesInFolder(
     let allFiles: Array<{ id: string; name: string }> = [];
 
     do {
-      const response = await drive.files.list({
+      const response = (await drive.files.list({
         q: `'${folderId}' in parents and trashed=false`,
         fields: "nextPageToken, files(id, name)",
         pageSize: 100,
@@ -103,7 +346,7 @@ export async function deleteAllFilesInFolder(
         supportsTeamDrives: true,
         includeItemsFromAllDrives: true,
         pageToken: pageToken || undefined,
-      });
+      })) as any; // Use type assertion here to bypass the GaxiosResponse type mismatch
 
       const files = response.data.files || [];
       allFiles = allFiles.concat(files as Array<{ id: string; name: string }>);
@@ -167,14 +410,22 @@ export async function deleteAllFilesInFolder(
   }
 }
 
+/**
+ * Uploads a file to Google Drive
+ *
+ * @param authClient the authorized OAuth2 client to use for Google Drive API
+ * @param body the readable stream of the file content
+ * @param fileName the name of the file to upload
+ * @param folderId the ID of the folder to upload to
+ */
 async function uploadToDrive(
   authClient: OAuth2Client,
   body: Readable,
-  fileName?: string,
+  fileName: string = "downloaded_file",
   folderId?: string,
 ) {
-  const drive = google.drive({ version: "v3", auth: authClient as never });
-  console.log("Uploading to Google Drive with authClient");
+  const drive = google.drive({ version: "v3", auth: authClient as any });
+  console.log(`Uploading ${fileName} to Google Drive with authClient`);
 
   // Validate folder ID before proceeding
   if (folderId) {
@@ -195,6 +446,10 @@ async function uploadToDrive(
     }
   }
 
+  // Determine the appropriate MIME type based on file extension
+  const mimeType = getMimeType(fileName);
+  console.log(`Using MIME type: ${mimeType} for file: ${fileName}`);
+
   interface DriveRequestBody {
     name: string;
     mimeType: string;
@@ -202,27 +457,31 @@ async function uploadToDrive(
   }
 
   const requestBody: DriveRequestBody = {
-    name: fileName || "downloaded_file.ipynb",
-    mimeType: "application/x-ipynb+json",
+    name: fileName,
+    mimeType: mimeType,
   };
 
   if (folderId) {
     requestBody.parents = [folderId];
   }
 
-  await drive.files.create({
-    requestBody,
-    media: {
-      mimeType: "application/x-ipynb+json",
-      body: body,
-    },
-    supportsAllDrives: true,
-    supportsTeamDrives: true,
-  });
+  try {
+    const response = (await drive.files.create({
+      requestBody,
+      media: {
+        mimeType: mimeType,
+        body: body,
+      },
+      supportsAllDrives: true,
+      supportsTeamDrives: true,
+    })) as any; // Use type assertion to bypass the GaxiosResponse type mismatch
 
-  console.log(
-    `File ${fileName} uploaded to Google Drive${folderId ? " folder" : ""}`,
-  );
+    console.log(
+      `File ${fileName} uploaded to Google Drive${folderId ? " folder" : ""} with ID: ${response.data.id}`,
+    );
+  } catch (error) {
+    console.error(`Error uploading file ${fileName}:`, error);
+  }
 }
 
 const shouldDeleteFirst = process.argv.includes("--delete");
@@ -234,9 +493,10 @@ authorize(SCOPES)
       await deleteAllFilesInFolder(client, FOLDER_ID);
     }
 
-    resourceLinks.forEach((link: string) => {
-      downloadFileFromGitHub(link, client, FOLDER_ID);
-    });
+    // Process each resource URL
+    for (const link of resourceLinks) {
+      await downloadFileAndUploadToDrive(link, client, FOLDER_ID);
+    }
   })
   .catch((error) => {
     console.error("Error:", error);
