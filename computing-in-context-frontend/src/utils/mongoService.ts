@@ -137,7 +137,11 @@ export async function searchResources(
         const filterCriteria: Record<string, string | string[]> = {};
         ["language", "course_level", "sequence_position"].forEach((field) => {
           if (filters[field]) {
-            filterCriteria[field] = filters[field];
+            if (field === "sequence_position") {
+              filterCriteria[field] = String(filters[field]).toLowerCase();
+            } else {
+              filterCriteria[field] = filters[field];
+            }
           }
         });
 
@@ -155,6 +159,7 @@ export async function searchResources(
           language: 1,
           course_level: 1,
           context: 1,
+          sequence_position: 1,
           cs_concepts: 1,
           vector_embedding: 1,
           score: { $meta: "vectorSearchScore" },
@@ -215,10 +220,11 @@ export async function getAllResources(
 
     ["language", "course_level", "sequence_position"].forEach((field) => {
       if (filters[field]) {
-        filterCriteria[field] = filters[field];
-        console.log(
-          `Applying filter to getAllResources: ${field} = ${filters[field]}`,
-        );
+        if (field === "sequence_position") {
+          filterCriteria[field] = String(filters[field]).toLowerCase();
+        } else {
+          filterCriteria[field] = filters[field];
+        }
       }
     });
 
@@ -233,6 +239,7 @@ export async function getAllResources(
         url: 1,
         language: 1,
         course_level: 1,
+        sequence_position: 1,
         context: 1,
         cs_concepts: 1,
       })
