@@ -302,6 +302,8 @@ export async function downloadResourcesFromDrive(
       const fileMetadata = await drive.files.get({
         fileId: fileId,
         fields: "name,mimeType,size",
+        supportsAllDrives: true,
+        supportsTeamDrives: true,
       });
 
       const fileName = fileMetadata.data.name || "";

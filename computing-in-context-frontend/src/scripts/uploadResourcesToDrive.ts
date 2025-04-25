@@ -5,7 +5,7 @@ import { google } from "googleapis";
 import { OAuth2Client } from "google-auth-library";
 import { Readable } from "stream";
 import * as dotenv from "dotenv";
-import { authorize } from "@/utils/driveService";
+import { authorize, getFileType } from "@/utils/driveService";
 import * as path from "path";
 import * as fs from "fs";
 
@@ -190,6 +190,14 @@ function extractFilename(url: string): string | null {
 }
 
 /**
+ * Result of a file operation
+ */
+interface FileOperationResult {
+  success: boolean;
+  error?: Error;
+}
+
+/**
  * Checks if a file exists on the local filesystem
  *
  * @param filePath Path to check
@@ -205,24 +213,29 @@ async function fileExists(filePath: string): Promise<boolean> {
 }
 
 /**
- * Downloads a file from a URL to local filesystem
- *
- * @param url URL to download from
- * @param outputPath Path to save file to
- * @returns Promise that resolves when download is complete
+ * Determines if content is an authentication/login page
  */
-async function downloadToLocalFile(
-  url: string,
-  outputPath: string,
-): Promise<void> {
-  try {
-    const response = await axios.get(url, { responseType: "arraybuffer" });
-    await fs.promises.writeFile(outputPath, Buffer.from(response.data));
-    console.log(`Downloaded ${url} to ${outputPath}`);
-  } catch (error) {
-    console.error(`Error downloading ${url} to ${outputPath}:`, error);
-    throw error;
-  }
+function isAuthPage(content: string): boolean {
+  // Common patterns in authentication pages
+  const authPatterns = [
+    "sign in",
+    "sign-in",
+    "login",
+    "log in",
+    "authenticate",
+    "authentication required",
+    "permission denied",
+    "access denied",
+    "not authorized",
+    "authorization required",
+    "please sign in",
+    "please log in",
+    "credentials",
+    "ServiceLogin",
+  ];
+
+  const lowerContent = content.toLowerCase();
+  return authPatterns.some((pattern) => lowerContent.includes(pattern));
 }
 
 /**
@@ -276,11 +289,7 @@ async function downloadFileAndUploadToDrive(
     const contentType = response.headers["content-type"];
     if (contentType && contentType.includes("text/html")) {
       const content = Buffer.from(response.data).toString("utf8");
-      if (
-        content.toLowerCase().includes("sign in") ||
-        content.toLowerCase().includes("log in") ||
-        content.toLowerCase().includes("authentication")
-      ) {
+      if (isAuthPage(content)) {
         console.log(`Authentication required for ${url}. Skipping.`);
         return;
       }
@@ -312,7 +321,12 @@ export async function deleteAllFilesInFolder(
     return;
   }
 
-  const drive = google.drive({ version: "v3", auth: authClient as any });
+  // Create the drive interface with the auth client
+  // This will complain about type compatibility but works at runtime
+  const drive = google.drive({
+    version: "v3",
+    auth: authClient,
+  });
   console.log(`Preparing to delete all files in folder: ${folderId}`);
 
   try {
@@ -335,10 +349,10 @@ export async function deleteAllFilesInFolder(
 
     // Query for all files within the folder with pagination to handle large folders
     let pageToken: string | undefined;
-    let allFiles: Array<{ id: string; name: string }> = [];
+    let allFiles: Array<{ id?: string; name?: string }> = [];
 
     do {
-      const response = (await drive.files.list({
+      const response = await drive.files.list({
         q: `'${folderId}' in parents and trashed=false`,
         fields: "nextPageToken, files(id, name)",
         pageSize: 100,
@@ -346,10 +360,15 @@ export async function deleteAllFilesInFolder(
         supportsTeamDrives: true,
         includeItemsFromAllDrives: true,
         pageToken: pageToken || undefined,
-      })) as any; // Use type assertion here to bypass the GaxiosResponse type mismatch
+      });
 
       const files = response.data.files || [];
-      allFiles = allFiles.concat(files as Array<{ id: string; name: string }>);
+      allFiles = allFiles.concat(
+        files.map((file) => ({
+          id: file.id || "",
+          name: file.name || "",
+        })),
+      );
       pageToken = response.data.nextPageToken ?? undefined;
     } while (pageToken);
 
@@ -372,19 +391,30 @@ export async function deleteAllFilesInFolder(
       // Process files in parallel within each small batch
       const deletePromises = batch.map(async (file) => {
         try {
+          if (!file.id) {
+            throw new Error(`File ${file.name || "unknown"} has no ID`);
+          }
+
           await drive.files.update({
-            fileId: file.id as string,
+            fileId: file.id,
             requestBody: {
               trashed: true,
             },
             supportsAllDrives: true,
             supportsTeamDrives: true,
           });
-          console.log(`Deleted file: ${file.name}`);
-          return { success: true };
+          console.log(`Deleted file: ${file.name || "unnamed file"}`);
+          return { success: true } as FileOperationResult;
         } catch (error) {
-          console.error(`Error deleting file ${file.name}: ${error}`);
-          return { success: false };
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          console.error(
+            `Error deleting file ${file.name || "unnamed file"}: ${errorMessage}`,
+          );
+          return {
+            success: false,
+            error: error instanceof Error ? error : new Error(String(error)),
+          } as FileOperationResult;
         }
       });
 
@@ -406,8 +436,18 @@ export async function deleteAllFilesInFolder(
       console.log(`Failed to delete ${failureCount} files.`);
     }
   } catch (error) {
-    console.error(`Error in deleteAllFilesInFolder: ${error}`);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`Error in deleteAllFilesInFolder: ${errorMessage}`);
   }
+}
+
+/**
+ * Interface for Drive request body
+ */
+interface DriveRequestBody {
+  name: string;
+  mimeType: string;
+  parents?: string[];
 }
 
 /**
@@ -423,8 +463,13 @@ async function uploadToDrive(
   body: Readable,
   fileName: string = "downloaded_file",
   folderId?: string,
-) {
-  const drive = google.drive({ version: "v3", auth: authClient as any });
+): Promise<void> {
+  // Create the drive interface with the auth client
+  // This will complain about type compatibility but works at runtime
+  const drive = google.drive({
+    version: "v3",
+    auth: authClient,
+  });
   console.log(`Uploading ${fileName} to Google Drive with authClient`);
 
   // Validate folder ID before proceeding
@@ -437,10 +482,10 @@ async function uploadToDrive(
         supportsAllDrives: true,
       });
       console.log(`Verified folder with ID: ${folderId}`);
-    } catch (error: unknown) {
+    } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      console.error(`Error with folder ID (${folderId}): `, errorMessage);
+      console.error(`Error with folder ID (${folderId}): ${errorMessage}`);
       console.log("Uploading to root folder instead.");
       folderId = undefined; // Reset folder ID to upload to root
     }
@@ -449,12 +494,6 @@ async function uploadToDrive(
   // Determine the appropriate MIME type based on file extension
   const mimeType = getMimeType(fileName);
   console.log(`Using MIME type: ${mimeType} for file: ${fileName}`);
-
-  interface DriveRequestBody {
-    name: string;
-    mimeType: string;
-    parents?: string[];
-  }
 
   const requestBody: DriveRequestBody = {
     name: fileName,
@@ -466,7 +505,7 @@ async function uploadToDrive(
   }
 
   try {
-    const response = (await drive.files.create({
+    const response = await drive.files.create({
       requestBody,
       media: {
         mimeType: mimeType,
@@ -474,30 +513,60 @@ async function uploadToDrive(
       },
       supportsAllDrives: true,
       supportsTeamDrives: true,
-    })) as any; // Use type assertion to bypass the GaxiosResponse type mismatch
+    });
 
+    const fileId = response.data.id;
     console.log(
-      `File ${fileName} uploaded to Google Drive${folderId ? " folder" : ""} with ID: ${response.data.id}`,
+      `File ${fileName} uploaded to Google Drive${folderId ? " folder" : ""} with ID: ${fileId || "unknown"}`,
     );
   } catch (error) {
-    console.error(`Error uploading file ${fileName}:`, error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`Error uploading file ${fileName}: ${errorMessage}`);
   }
 }
 
-const shouldDeleteFirst = process.argv.includes("--delete");
+/**
+ * Main function that processes all resource links
+ */
+async function main(): Promise<void> {
+  const shouldDeleteFirst = process.argv.includes("--delete");
 
-authorize(SCOPES)
-  .then(async (client) => {
+  try {
+    // Authorize with Google Drive
+    console.log("Authorizing with Google Drive...");
+    const client = await authorize(SCOPES);
+
     if (shouldDeleteFirst && FOLDER_ID) {
       console.log("Deleting all files in folder before uploading new ones...");
       await deleteAllFilesInFolder(client, FOLDER_ID);
     }
 
+    console.log(`Processing ${resourceLinks.length} resource links...`);
+    let processedCount = 0;
+
     // Process each resource URL
     for (const link of resourceLinks) {
       await downloadFileAndUploadToDrive(link, client, FOLDER_ID);
+      processedCount++;
+
+      // Basic progress reporting
+      if (processedCount % 5 === 0 || processedCount === resourceLinks.length) {
+        console.log(
+          `Progress: ${processedCount}/${resourceLinks.length} files processed`,
+        );
+      }
     }
-  })
-  .catch((error) => {
-    console.error("Error:", error);
-  });
+
+    console.log("All resources processed successfully!");
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`Error in main execution: ${errorMessage}`);
+    process.exit(1);
+  }
+}
+
+// Run the main function
+main().catch((error) => {
+  console.error("Unhandled error:", error);
+  process.exit(1);
+});
