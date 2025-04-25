@@ -14,7 +14,11 @@ const CREDENTIALS_PATH = path.join(process.cwd(), "credentials.json");
  *
  */
 export async function authorize(
-  scopes: string[] = ["https://www.googleapis.com/auth/drive.readonly"],
+  scopes: string[] = [
+    "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/drive.metadata.readonly",
+    "https://www.googleapis.com/auth/drive.file",
+  ],
 ): Promise<OAuth2Client> {
   let client: OAuth2Client | null =
     (await loadSavedCredentialsIfExist()) as OAuth2Client;
@@ -111,31 +115,53 @@ const MIME_TYPES: Record<string, string> = {
  * @returns Whether the content appears to be a login page
  */
 function isAuthPage(content: string): boolean {
-  // Common patterns in authentication pages
-  const authPatterns = [
-    "sign in",
-    "sign-in",
-    "login",
-    "log in",
-    "authenticate",
-    "authentication required",
+  // Don't consider it an auth page if it's a valid JSON notebook
+  if (
+    content.trim().startsWith("{") &&
+    content.includes('"cells":') &&
+    content.includes('"metadata":')
+  ) {
+    return false;
+  }
+
+  // Common patterns that indicate an actual login page
+  const strongAuthPatterns = [
+    "<title>sign in</title>",
+    "<title>log in</title>",
+    "accounts.google.com/servicelogin",
+    "google.com/accounts/servicelogin",
+    'action="https://accounts.google.com',
+    "need to sign in",
+    "you'll need to sign in",
+    "please sign in to access",
+    "login to continue",
     "permission denied",
     "access denied",
-    "not authorized",
-    "authorization required",
-    "please sign in",
-    "please log in",
-    "credentials",
-    "<title>google accounts",
-    "google.com/accounts",
-    "accounts.google.com",
-    "ServiceLogin",
   ];
 
+  // Check for strong patterns first
   const lowerContent = content.toLowerCase();
-  return authPatterns.some((pattern) => lowerContent.includes(pattern));
-}
+  for (const pattern of strongAuthPatterns) {
+    if (lowerContent.includes(pattern)) {
+      return true;
+    }
+  }
 
+  // For weaker patterns, look for combinations of indicators
+  const weakAuthPatterns = ["sign in", "login", "log in", "credentials"];
+
+  // Count how many weak patterns appear
+  let weakPatternCount = 0;
+  for (const pattern of weakAuthPatterns) {
+    if (lowerContent.includes(pattern)) {
+      weakPatternCount++;
+    }
+  }
+
+  // Only consider it an auth page if multiple weak patterns appear
+  // AND it's an HTML page (not JSON)
+  return weakPatternCount >= 2 && lowerContent.includes("<html");
+}
 /**
  * Builds a query string to find resources in a folder, supporting multiple file types
  *
@@ -366,7 +392,6 @@ export async function downloadResourcesFromDrive(
                 raw_content: content.substring(0, 5000), // Store the raw content for analysis
               };
             }
-
             // Return as text for other JSON files
             return content;
           }
@@ -397,6 +422,7 @@ export async function downloadResourcesFromDrive(
         }
 
         // Return as text for other text-based files
+        console.log(`Text file detected: ${fileName}`);
         return content;
       } else {
         // For binary files, return the buffer with metadata
