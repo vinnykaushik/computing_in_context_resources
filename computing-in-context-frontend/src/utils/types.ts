@@ -63,6 +63,10 @@ export type FileInfo = {
   vector_embedding: number[] | null;
   content_sample: string;
   file_type: string;
+  university?: string;
+  author?: string;
+  original_filename?: string;
+  drive_id?: string;
 };
 
 // For backward compatibility, keep NotebookInfo type
@@ -100,4 +104,15 @@ export type DriveFileInfo = {
   modifiedTime?: string;
   size?: number;
   iconLink?: string;
+};
+
+export interface WebhookPayload {
+  secret: string;
+  processAll?: boolean;
+  fileIds?: string[];
+}
+
+// MongoDB query filter type
+export type FilterCriteria = {
+  [key: string]: any;
 };

@@ -97,6 +97,85 @@ async function embedQuery(query: string) {
 }
 
 /**
+ * Get a list of all file IDs that are already in the database
+ */
+export async function getProcessedFileIds(): Promise<string[]> {
+  try {
+    const db = await connectToDatabase();
+    const resources = db.collection("resources");
+
+    // Query for all documents that have a drive_id field
+    const result = await resources
+      .find({ drive_id: { $exists: true } }, { projection: { drive_id: 1 } })
+      .toArray();
+
+    // Extract drive_ids from the results
+    const driveIds = result
+      .map((doc) => doc.drive_id)
+      .filter((id) => id && typeof id === "string");
+
+    console.log(
+      `Found ${driveIds.length} already processed files in the database`,
+    );
+    return driveIds;
+  } catch (error) {
+    console.error("Error getting processed file IDs:", error);
+    return [];
+  }
+}
+
+/**
+ * Update an existing resource in the database with new content and metadata
+ */
+export async function updateExistingResource(
+  driveId: string,
+  content: FileContent,
+  info: FileInfo,
+): Promise<void> {
+  try {
+    const db = await connectToDatabase();
+    const resources = db.collection("resources");
+
+    // Find the resource by drive_id
+    const existingResource = await resources.findOne({ drive_id: driveId });
+
+    if (!existingResource) {
+      throw new Error(`Resource with drive_id ${driveId} not found`);
+    }
+
+    // Update the resource with new information
+    const updateResult = await resources.updateOne(
+      { drive_id: driveId },
+      {
+        $set: {
+          content: content,
+          title: info.title,
+          language: info.language,
+          course_level: info.course_level,
+          cs_concepts: info.cs_concepts,
+          context: info.context,
+          sequence_position: info.sequence_position,
+          vector_embedding: info.vector_embedding,
+          content_sample: info.content_sample,
+          file_type: info.file_type,
+          university: info.university,
+          author: info.author,
+          original_filename: info.original_filename,
+          updated_at: new Date(),
+        },
+      },
+    );
+
+    console.log(
+      `Updated resource with drive_id ${driveId}, matched: ${updateResult.matchedCount}, modified: ${updateResult.modifiedCount}`,
+    );
+  } catch (error) {
+    console.error(`Error updating resource with drive_id ${driveId}:`, error);
+    throw error;
+  }
+}
+
+/**
  * Search resources using phrase-aware vector search
  * @param query The user's search query
  * @param filters Optional filters to apply alongside vector search
@@ -275,16 +354,21 @@ export async function getAllResources(
   }
 }
 
-export async function getResourceById(id: string) {
-  console.log("endpoint called");
+export async function getResourceByDriveId(driveId: string) {
+  console.log(`Looking up resource with drive_id: ${driveId}`);
   const db = await connectToDatabase();
   const resources = db.collection("resources");
   try {
-    const resource = await resources.findOne({ _id: new mongoDb.ObjectId(id) });
-    console.log("MongoService resource found: ", resource);
+    // Look up by drive_id field, not by _id
+    const resource = await resources.findOne({ drive_id: driveId });
+    if (resource) {
+      console.log(`Found resource with drive_id ${driveId}`);
+    } else {
+      console.log(`No resource found with drive_id ${driveId}`);
+    }
     return resource;
   } catch (error) {
-    console.error("Error fetching resource by ID:", error);
+    console.error(`Error fetching resource by drive_id ${driveId}:`, error);
     throw error;
   }
 }
