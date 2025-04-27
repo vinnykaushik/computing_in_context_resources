@@ -1,82 +1,112 @@
 import { OpenAI } from "openai";
 import dotenv from "dotenv";
-import * as path from "path";
 import {
   FileContent,
   FileInfo,
   NotebookContent,
   TextContent,
   BinaryContent,
-  DriveFileInfo,
-} from "@/utils/types";
+} from "../utils/types";
 import {
   downloadResourcesFromDrive,
   listResourcesInDrive,
-} from "@/utils/driveService";
-import { deleteAllResources, saveToMongoDB } from "@/utils/mongoService";
+  getFileType,
+} from "../utils/driveService";
+import {
+  deleteAllResources,
+  saveToMongoDB,
+  getResourceByDriveId,
+  getProcessedFileIds,
+  updateExistingResource,
+} from "../utils/mongoService";
 import { CreateEmbeddingResponse, ChatCompletion } from "openai/resources";
+import { exit } from "process";
+import mammoth from "mammoth";
 
-// Load environment variables
 dotenv.config();
-const EMBEDDING_MODEL = "text-embedding-3-large";
+const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || "text-embedding-3-large";
+const REASONING_MODEL = process.env.REASONING_MODEL || "gpt-4o";
 const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
+const PORT = process.env.PORT || 3000;
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
 
-// Set up OpenAI API client
 const openai_client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-type FileTypeMap = {
-  [extension: string]: string;
-};
+/**
+ * A utility function to retry operations that might be rate limited
+ */
+async function withRateLimitRetry<T>(
+  operation: () => Promise<T>,
+  maxRetries: number = 5,
+  initialDelay: number = 1000,
+  backoffFactor: number = 2,
+): Promise<T> {
+  let retries = 0;
+  let delay = initialDelay;
+
+  while (true) {
+    try {
+      return await operation();
+    } catch (error) {
+      const isRateLimit =
+        (error instanceof Error && error.message.includes("429")) ||
+        (error as any)?.status === 429 ||
+        (error as any)?.statusCode === 429;
+
+      if (retries >= maxRetries || !isRateLimit) {
+        throw error;
+      }
+
+      console.warn(
+        `Rate limit hit. Retrying in ${delay}ms (attempt ${retries + 1}/${maxRetries})`,
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, delay));
+
+      delay *= backoffFactor;
+      retries++;
+    }
+  }
+}
 
 /**
- * Determines the file type based on the file extension
- *
- * @param fileName the name of the file
- * @returns {string} the file type
+ * Extracts university and author information from filename
+ * Expected format: "UniversityName_AuthorName_OriginalFilename"
  */
-function getFileType(fileName: string): string {
-  const extension = path.extname(fileName).toLowerCase();
+function extractMetadataFromFilename(fileName: string): {
+  university: string;
+  author: string;
+  originalName: string;
+} {
+  let university = "Unknown University";
+  let author = "Unknown Author";
+  let originalName = fileName;
 
-  // Map extensions to file types
-  const fileTypes: FileTypeMap = {
-    ".ipynb": "notebook",
-    ".py": "python",
-    ".js": "javascript",
-    ".ts": "typescript",
-    ".html": "html",
-    ".css": "css",
-    ".md": "markdown",
-    ".txt": "text",
-    ".json": "json",
-    ".csv": "csv",
-    ".xml": "xml",
-    ".r": "r",
-    ".pdf": "pdf",
-    ".doc": "word",
-    ".docx": "word",
-    ".ppt": "powerpoint",
-    ".pptx": "powerpoint",
-    ".xls": "excel",
-    ".xlsx": "excel",
-  };
+  const parts = fileName.split("_");
+  if (parts.length >= 3) {
+    university = parts[0].trim();
+    author = parts[1].trim();
+    originalName = parts.slice(2).join("_");
+    if (originalName.endsWith(" - Vineet Kaushik")) {
+      originalName = originalName.replace(" - Vineet Kaushik", "");
+    }
+  } else if (parts.length === 2) {
+    university = parts[0].trim();
+    author = parts[1].trim();
+  }
 
-  return fileTypes[extension] || "unknown";
+  return { university, author, originalName };
 }
 
 /**
  * Extracts text content from different file types
- *
- * @param content the file content
- * @param fileType the type of the file
- * @returns {string} the extracted text content
  */
-function extractTextContent(
+async function extractTextContent(
   content: FileContent | null,
   fileType: string,
-): string {
-  // Handle null content case
+): Promise<string> {
   if (content === null) {
     console.warn(
       `Cannot extract text from null content for file type: ${fileType}`,
@@ -88,8 +118,39 @@ function extractTextContent(
 
   try {
     switch (fileType) {
+      case "docx":
+        if (
+          Buffer.isBuffer(content) ||
+          (typeof content === "object" && content !== null && "data" in content)
+        ) {
+          const buffer = Buffer.isBuffer(content)
+            ? content
+            : Buffer.from((content as BinaryContent).data);
+
+          try {
+            const result = await mammoth.extractRawText({ buffer });
+            textContent = result.value;
+
+            if (
+              typeof content === "object" &&
+              content !== null &&
+              "data" in content
+            ) {
+              (content as BinaryContent).extractedText = textContent;
+            }
+
+            console.log(
+              `Successfully extracted ${textContent.length} characters from DOCX file`,
+            );
+          } catch (docxError) {
+            console.error(`Error extracting text from DOCX: ${docxError}`);
+            textContent = "Error extracting DOCX content";
+          }
+        }
+        break;
+
       case "notebook":
-        // Handle Jupyter notebooks
+      case "ipynb":
         const notebookContent = content as NotebookContent;
         if (notebookContent.cells) {
           for (const cell of notebookContent.cells) {
@@ -116,7 +177,6 @@ function extractTextContent(
       case "xml":
       case "markdown":
       case "text":
-        // Handle text-based files
         if (typeof content === "string") {
           textContent = content as TextContent;
         } else if (Buffer.isBuffer(content)) {
@@ -131,7 +191,6 @@ function extractTextContent(
 
       case "json":
       case "csv":
-        // Handle data files
         if (typeof content === "string") {
           textContent = content as TextContent;
         } else if (Buffer.isBuffer(content)) {
@@ -145,7 +204,6 @@ function extractTextContent(
         break;
 
       default:
-        // For file types we can't directly process, try to extract what we can
         if (typeof content === "string") {
           textContent = content as TextContent;
         } else if (Buffer.isBuffer(content)) {
@@ -177,11 +235,6 @@ function extractTextContent(
 
 /**
  * Generates a viewable URL for the file based on its ID and type
- *
- * @param fileId the Google Drive file ID
- * @param fileName the name of the file
- * @param webViewLink optional web view link provided by Google Drive
- * @returns {string} the URL to view the file
  */
 function generateFileUrl(
   fileId: string,
@@ -192,42 +245,58 @@ function generateFileUrl(
 
   switch (fileType) {
     case "notebook":
+    case "ipynb":
       return `https://colab.research.google.com/drive/${fileId}`;
 
     case "pdf":
-    case "word":
-    case "powerpoint":
-    case "excel":
+    case "doc":
+    case "docx":
+    case "ppt":
+    case "pptx":
+    case "xls":
+    case "xlsx":
       return `https://drive.google.com/file/d/${fileId}/view`;
 
     case "google_doc":
-      return `https://docs.google.com/document/d/${fileId}/edit`;
+      return `https://docs.google.com/document/d/${fileId}/view`;
 
     case "google_sheet":
-      return `https://docs.google.com/spreadsheets/d/${fileId}/edit`;
+      return `https://docs.google.com/spreadsheets/d/${fileId}/view`;
 
     case "google_slides":
-      return `https://docs.google.com/presentation/d/${fileId}/edit`;
+      return `https://docs.google.com/presentation/d/${fileId}/view`;
 
     default:
-      // Use provided webViewLink or default to file view
       return webViewLink || `https://drive.google.com/file/d/${fileId}/view`;
   }
 }
 
-async function processGoogleDriveFiles(): Promise<void> {
+/**
+ * Process all files in the Google Drive folder
+ * If onlyNew is true, only process files that haven't been processed before
+ */
+async function processGoogleDriveFiles(onlyNew: boolean = true): Promise<void> {
   if (!FOLDER_ID) {
     console.error("Missing Google Drive folder ID in environment variables.");
     return;
   }
-  console.log(`Processing files from Google Drive folder: ${FOLDER_ID}`);
+  console.log(
+    `Processing files from Google Drive folder: ${FOLDER_ID} (onlyNew: ${onlyNew})`,
+  );
 
   try {
     const files = await listResourcesInDrive(FOLDER_ID);
     console.log(`Found ${files.length} files in Google Drive folder`);
 
+    let processedFileIds: string[] = [];
+    if (onlyNew) {
+      processedFileIds = await getProcessedFileIds();
+      console.log(`Found ${processedFileIds.length} already processed files`);
+    }
+
     let successCount = 0;
     let failureCount = 0;
+    let skippedCount = 0;
 
     for (const file of files) {
       console.log(
@@ -240,10 +309,17 @@ async function processGoogleDriveFiles(): Promise<void> {
         continue;
       }
 
-      try {
-        const content = await downloadResourcesFromDrive(file.id);
+      if (onlyNew && processedFileIds.includes(file.id)) {
+        console.log(`Skipping already processed file: ${file.name}`);
+        skippedCount++;
+        continue;
+      }
 
-        // Skip files with null content (usually due to permission issues)
+      try {
+        const content = await withRateLimitRetry(() =>
+          downloadResourcesFromDrive(file.id),
+        );
+
         if (content === null) {
           console.warn(
             `No content downloaded for file: ${file.name} (ID: ${file.id}). Skipping.`,
@@ -257,40 +333,63 @@ async function processGoogleDriveFiles(): Promise<void> {
 
         console.log(`File type detected: ${fileType}`);
 
-        // Extract information based on file type
-        const info = await extractFileInfo(content, fileType, file.name);
+        const { university, author, originalName } =
+          extractMetadataFromFilename(file.name);
+        console.log(
+          `Metadata: University=${university}, Author=${author}, OriginalName=${originalName}`,
+        );
 
-        await saveToMongoDB(url, content, info);
-        console.log(`Successfully processed: ${file.name}`);
+        const info = await extractFileInfo(content, fileType, originalName);
+
+        const enrichedInfo: FileInfo = {
+          ...info,
+          university,
+          author,
+          original_filename: originalName,
+          drive_id: file.id,
+        };
+
+        const existingResource = await getResourceByDriveId(file.id);
+
+        if (existingResource) {
+          await updateExistingResource(file.id, content, enrichedInfo);
+          console.log(`Updated existing resource: ${file.name}`);
+        } else {
+          await saveToMongoDB(url, content, enrichedInfo);
+          console.log(`Saved new resource: ${file.name}`);
+        }
+
         successCount++;
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
         console.error(`Error processing file ${file.name}: ${errorMessage}`);
         failureCount++;
-        // Continue with next file instead of stopping the entire process
         continue;
       }
     }
 
     console.log(
-      `Processing complete: ${successCount} files processed successfully, ${failureCount} failed`,
+      `Processing complete: ${successCount} files processed successfully, ${failureCount} failed, ${skippedCount} skipped`,
     );
-    process.exit(0);
+    exit(0);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error processing Google Drive files: ${errorMessage}`);
-    process.exit(1);
+    throw error;
+    exit(1);
   }
 }
 
+/**
+ * Extract file information and metadata
+ */
 export async function extractFileInfo(
   content: FileContent | null,
   fileType: string,
   fileName: string,
 ): Promise<FileInfo> {
-  // Extract text content based on file type
-  const textContent = extractTextContent(content, fileType);
+  const textContent = await extractTextContent(content, fileType);
 
   let title = "";
   let language = "";
@@ -300,7 +399,6 @@ export async function extractFileInfo(
   let csConcepts = "";
   let embedding: number[] | null = null;
 
-  // Extract title
   try {
     if ((!title || title.length < 3) && textContent.length > 0) {
       const titlePrompt = `
@@ -308,11 +406,12 @@ export async function extractFileInfo(
         Return only the title in plain text. Do not surround in quotes.
         Content: ${textContent.substring(0, 1000)}
       `;
-      const response: ChatCompletion =
-        await openai_client.chat.completions.create({
-          model: "gpt-4.1-nano",
+      const response: ChatCompletion = await withRateLimitRetry(() =>
+        openai_client.chat.completions.create({
+          model: REASONING_MODEL,
           messages: [{ role: "user", content: titlePrompt }],
-        });
+        }),
+      );
       if (response.choices[0].message.content) {
         title = response.choices[0].message.content.trim();
       }
@@ -320,23 +419,22 @@ export async function extractFileInfo(
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error extracting title: ${errorMessage}`);
-    // Use filename as fallback
     title = fileName || "Untitled Document";
   }
 
-  // Only try to determine language and other metadata if we have text content
   if (textContent.length > 0) {
-    // Determine language based on file type or content
     try {
-      // First try to infer from file type
       switch (fileType) {
         case "python":
+        case "py":
           language = "python";
           break;
         case "javascript":
+        case "js":
           language = "javascript";
           break;
         case "typescript":
+        case "ts":
           language = "typescript";
           break;
         case "r":
@@ -349,21 +447,25 @@ export async function extractFileInfo(
           language = "css";
           break;
         case "markdown":
+        case "md":
           language = "markdown";
           break;
+        case "docx":
+          language = "document";
+          break;
         default:
-          // If we can't determine from file type, ask the LLM
           const languagePrompt = `
             Determine the programming language used in this content.
             Return only the language name. If multiple, separate with commas.
             Content: ${textContent.substring(0, 4000)}
           `;
 
-          const response: ChatCompletion =
-            await openai_client.chat.completions.create({
-              model: "gpt-4.1-nano",
+          const response: ChatCompletion = await withRateLimitRetry(() =>
+            openai_client.chat.completions.create({
+              model: REASONING_MODEL,
               messages: [{ role: "user", content: languagePrompt }],
-            });
+            }),
+          );
 
           if (response.choices[0].message.content) {
             language = response.choices[0].message.content.trim().toLowerCase();
@@ -373,11 +475,9 @@ export async function extractFileInfo(
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       console.error(`Error extracting language: ${errorMessage}`);
-      // Default to file type if we can't determine language
       language = fileType !== "unknown" ? fileType : "unknown";
     }
 
-    // Extract context/topic information
     try {
       const contextPrompt = `
         Identify the real-world context or topic of this content. 
@@ -394,11 +494,12 @@ export async function extractFileInfo(
         Content: ${textContent.substring(0, 4000)}
       `;
 
-      const response: ChatCompletion =
-        await openai_client.chat.completions.create({
-          model: "o3-mini",
+      const response: ChatCompletion = await withRateLimitRetry(() =>
+        openai_client.chat.completions.create({
+          model: REASONING_MODEL,
           messages: [{ role: "user", content: contextPrompt }],
-        });
+        }),
+      );
       if (response.choices[0].message.content) {
         context = response.choices[0].message.content.trim();
       }
@@ -408,7 +509,6 @@ export async function extractFileInfo(
       console.error(`Error extracting context: ${errorMessage}`);
     }
 
-    // Determine sequence position
     try {
       const sequencePrompt = `
         Analyze this content and determine where it would likely appear in a course sequence.
@@ -426,18 +526,18 @@ export async function extractFileInfo(
         Content: ${textContent.substring(0, 4000)}
       `;
 
-      const response: ChatCompletion =
-        await openai_client.chat.completions.create({
-          model: "o3-mini",
+      const response: ChatCompletion = await withRateLimitRetry(() =>
+        openai_client.chat.completions.create({
+          model: REASONING_MODEL,
           messages: [{ role: "user", content: sequencePrompt }],
-        });
+        }),
+      );
 
       if (response.choices[0].message.content) {
         sequencePosition = response.choices[0].message.content
           .trim()
           .toLowerCase();
 
-        // Normalize response to one of our three categories
         if (sequencePosition.includes("beginning")) {
           sequencePosition = "beginning";
         } else if (sequencePosition.includes("end")) {
@@ -452,12 +552,15 @@ export async function extractFileInfo(
       console.error(`Error determining sequence position: ${errorMessage}`);
     }
 
-    // Only determine course level for programming-related content
     const programmingFileTypes = [
       "notebook",
+      "ipynb",
       "python",
+      "py",
       "javascript",
+      "js",
       "typescript",
+      "ts",
       "r",
     ];
     if (programmingFileTypes.includes(fileType)) {
@@ -473,16 +576,17 @@ export async function extractFileInfo(
           Content: ${textContent.substring(0, 4000)}
         `;
 
-        const response: ChatCompletion =
-          await openai_client.chat.completions.create({
-            model: "o3-mini",
+        const response: ChatCompletion = await withRateLimitRetry(() =>
+          openai_client.chat.completions.create({
+            model: REASONING_MODEL,
             messages: [{ role: "user", content: levelPrompt }],
-          });
+          }),
+        );
 
         if (response.choices[0].message.content) {
           level = response.choices[0].message.content.trim().toUpperCase();
           if (!["CS0", "CS1", "CS2", "CS3"].includes(level)) {
-            level = "CS1"; // Default to CS1 if we can't determine
+            level = "CS1";
           }
         }
       } catch (error) {
@@ -491,10 +595,9 @@ export async function extractFileInfo(
         console.error(`Error determining course level: ${errorMessage}`);
       }
     } else {
-      level = "N/A"; // Not applicable for non-programming files
+      level = "N/A";
     }
 
-    // Extract CS concepts for programming-related content
     if (programmingFileTypes.includes(fileType)) {
       try {
         const conceptsPrompt = `
@@ -504,11 +607,12 @@ export async function extractFileInfo(
           Content: ${textContent.substring(0, 4000)}
         `;
 
-        const response: ChatCompletion =
-          await openai_client.chat.completions.create({
-            model: "gpt-4.1-nano",
+        const response: ChatCompletion = await withRateLimitRetry(() =>
+          openai_client.chat.completions.create({
+            model: REASONING_MODEL,
             messages: [{ role: "user", content: conceptsPrompt }],
-          });
+          }),
+        );
 
         if (response.choices[0].message.content) {
           csConcepts = response.choices[0].message.content.trim();
@@ -519,7 +623,6 @@ export async function extractFileInfo(
         console.error(`Error extracting CS concepts: ${errorMessage}`);
       }
     } else {
-      // For non-programming files, extract general concepts
       try {
         const conceptsPrompt = `
           Extract the main concepts or topics from this content.
@@ -528,11 +631,12 @@ export async function extractFileInfo(
           Content: ${textContent.substring(0, 4000)}
         `;
 
-        const response: ChatCompletion =
-          await openai_client.chat.completions.create({
-            model: "gpt-4.1-nano",
+        const response: ChatCompletion = await withRateLimitRetry(() =>
+          openai_client.chat.completions.create({
+            model: REASONING_MODEL,
             messages: [{ role: "user", content: conceptsPrompt }],
-          });
+          }),
+        );
 
         if (response.choices[0].message.content) {
           csConcepts = response.choices[0].message.content.trim();
@@ -544,16 +648,16 @@ export async function extractFileInfo(
       }
     }
 
-    // Generate embedding for the content only if we have content
     try {
-      // Limit content length for embedding to the model's maximum context window
       const contentForEmbedding = textContent.substring(0, 8192);
       if (contentForEmbedding.length > 0) {
         const embeddingResponse: CreateEmbeddingResponse =
-          await openai_client.embeddings.create({
-            input: contentForEmbedding,
-            model: EMBEDDING_MODEL,
-          });
+          await withRateLimitRetry(() =>
+            openai_client.embeddings.create({
+              input: contentForEmbedding,
+              model: EMBEDDING_MODEL,
+            }),
+          );
         embedding = embeddingResponse.data[0].embedding;
       } else {
         console.warn("No text content available for embedding generation");
@@ -579,16 +683,18 @@ export async function extractFileInfo(
 }
 
 async function main(): Promise<void> {
-  const shouldDeleteFirst = process.argv.includes("--delete");
+  const args = process.argv.slice(2);
+  const processAll = args.includes("--all");
+  const deleteFirst = args.includes("--delete");
 
   try {
-    if (shouldDeleteFirst) {
+    if (deleteFirst) {
       console.log("Deleting all resources from MongoDB...");
       await deleteAllResources();
       console.log("Deleted all resources from MongoDB.");
     }
 
-    await processGoogleDriveFiles();
+    await processGoogleDriveFiles(!processAll);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error in main function: ${errorMessage}`);

@@ -2,7 +2,12 @@ import dotenv from "dotenv";
 import { MongoClient } from "mongodb";
 import * as mongoDb from "mongodb";
 import { OpenAI } from "openai";
-import { ResourceDocument, FileContent, FileInfo } from "./types";
+import {
+  ResourceDocument,
+  FileContent,
+  FileInfo,
+  BinaryContent,
+} from "./types";
 import { createEnhancedQueryText, logQueryParsing } from "./phraseAwareSearch";
 import * as fs from "fs";
 import * as path from "path";
@@ -93,6 +98,85 @@ async function embedQuery(query: string) {
     throw new Error(
       `Failed to generate embedding: ${error instanceof Error ? error.message : "Unknown error"}`,
     );
+  }
+}
+
+/**
+ * Get a list of all file IDs that are already in the database
+ */
+export async function getProcessedFileIds(): Promise<string[]> {
+  try {
+    const db = await connectToDatabase();
+    const resources = db.collection("resources");
+
+    // Query for all documents that have a drive_id field
+    const result = await resources
+      .find({ drive_id: { $exists: true } }, { projection: { drive_id: 1 } })
+      .toArray();
+
+    // Extract drive_ids from the results
+    const driveIds = result
+      .map((doc) => doc.drive_id)
+      .filter((id) => id && typeof id === "string");
+
+    console.log(
+      `Found ${driveIds.length} already processed files in the database`,
+    );
+    return driveIds;
+  } catch (error) {
+    console.error("Error getting processed file IDs:", error);
+    return [];
+  }
+}
+
+/**
+ * Update an existing resource in the database with new content and metadata
+ */
+export async function updateExistingResource(
+  driveId: string,
+  content: FileContent,
+  info: FileInfo,
+): Promise<void> {
+  try {
+    const db = await connectToDatabase();
+    const resources = db.collection("resources");
+
+    // Find the resource by drive_id
+    const existingResource = await resources.findOne({ drive_id: driveId });
+
+    if (!existingResource) {
+      throw new Error(`Resource with drive_id ${driveId} not found`);
+    }
+
+    // Update the resource with new information
+    const updateResult = await resources.updateOne(
+      { drive_id: driveId },
+      {
+        $set: {
+          content: content,
+          title: info.title,
+          language: info.language,
+          course_level: info.course_level,
+          cs_concepts: info.cs_concepts,
+          context: info.context,
+          sequence_position: info.sequence_position,
+          vector_embedding: info.vector_embedding,
+          content_sample: info.content_sample,
+          file_type: info.file_type,
+          university: info.university,
+          author: info.author,
+          original_filename: info.original_filename,
+          updated_at: new Date(),
+        },
+      },
+    );
+
+    console.log(
+      `Updated resource with drive_id ${driveId}, matched: ${updateResult.matchedCount}, modified: ${updateResult.modifiedCount}`,
+    );
+  } catch (error) {
+    console.error(`Error updating resource with drive_id ${driveId}:`, error);
+    throw error;
   }
 }
 
@@ -275,16 +359,21 @@ export async function getAllResources(
   }
 }
 
-export async function getResourceById(id: string) {
-  console.log("endpoint called");
+export async function getResourceByDriveId(driveId: string) {
+  console.log(`Looking up resource with drive_id: ${driveId}`);
   const db = await connectToDatabase();
   const resources = db.collection("resources");
   try {
-    const resource = await resources.findOne({ _id: new mongoDb.ObjectId(id) });
-    console.log("MongoService resource found: ", resource);
+    // Look up by drive_id field, not by _id
+    const resource = await resources.findOne({ drive_id: driveId });
+    if (resource) {
+      console.log(`Found resource with drive_id ${driveId}`);
+    } else {
+      console.log(`No resource found with drive_id ${driveId}`);
+    }
     return resource;
   } catch (error) {
-    console.error("Error fetching resource by ID:", error);
+    console.error(`Error fetching resource by drive_id ${driveId}:`, error);
     throw error;
   }
 }
@@ -340,31 +429,42 @@ export async function saveToMongoDB(
     return;
   }
 
-  // For Jupyter notebooks, ensure proper format
   const fileType = info.file_type || getFileExtension(url);
   let processedContent: FileContent = content;
 
-  if (fileType === "notebook" || fileType === "ipynb") {
+  if (
+    fileType === "docx" &&
+    typeof content === "object" &&
+    content !== null &&
+    "data" in content
+  ) {
+    const binaryContent = content as BinaryContent;
+
+    if (binaryContent.extractedText) {
+      processedContent = {
+        data: binaryContent.data,
+        mimeType:
+          binaryContent.mimeType ||
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        extractedText: binaryContent.extractedText,
+      };
+    }
+  } else if (fileType === "notebook" || fileType === "ipynb") {
     if (typeof content === "string") {
       try {
         processedContent = JSON.parse(content);
       } catch (e) {
         console.log(`Content for ${url} is not a valid notebook format`, e);
-        // Store as string if parsing fails
         processedContent = { text: content as string };
       }
     }
   } else if (typeof content === "string") {
-    // Store text content directly
     processedContent = content;
   } else if (Buffer.isBuffer(content)) {
-    // Convert Buffer to string for storage
     processedContent = content.toString("base64");
   } else if (typeof content === "object" && !Array.isArray(content)) {
-    // Keep objects as is
     processedContent = content;
   } else {
-    // Try to convert anything else to string
     try {
       processedContent = JSON.stringify(content);
     } catch (e) {
@@ -385,13 +485,16 @@ export async function saveToMongoDB(
     vector_embedding: info.vector_embedding ?? undefined,
     content_sample: info.content_sample,
     file_type: info.file_type || fileType,
+    author: info.author,
+    university: info.university,
+    drive_id: info.drive_id,
     metadata_processed: true,
     date_saved: new Date(),
   };
 
   await resources.insertOne(resource);
   console.log(
-    `Saved ${url} to MongoDB as ${resource.file_type || "unknown type"}`,
+    `Saved ${url} to MongoDB as ${resource.file_type || "unknown type"} by ${resource.author || "unknown author"} from ${resource.university || "unknown university"}`,
   );
 }
 

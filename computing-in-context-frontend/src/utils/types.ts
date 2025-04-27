@@ -1,6 +1,5 @@
 import { ObjectId } from "mongodb";
 
-// MongoDB Types
 export type ResourceDocument = {
   _id?: ObjectId;
   url: string;
@@ -16,19 +15,17 @@ export type ResourceDocument = {
   content_sample?: string;
   metadata_processed?: boolean;
   file_type?: string;
+  author?: string;
+  university?: string;
+  drive_id?: string;
 };
 
-// For backward compatibility, keep NotebookDocument type
-export type NotebookDocument = ResourceDocument;
-
-// Generic type for file content
 export type FileContent =
   | NotebookContent
   | TextContent
   | BinaryContent
   | Record<string, unknown>;
 
-// Interface for Jupyter notebook content
 export type NotebookContent = {
   cells?: NotebookCell[];
   metadata?: Record<string, unknown>;
@@ -36,13 +33,12 @@ export type NotebookContent = {
   nbformat_minor?: number;
 };
 
-// Interface for text-based content
 export type TextContent = string;
 
-// Interface for binary content
 export type BinaryContent = {
-  data: Uint8Array | Buffer;
+  data: Buffer | Uint8Array;
   mimeType?: string;
+  extractedText?: string;
 };
 
 export type NotebookCell = {
@@ -63,10 +59,11 @@ export type FileInfo = {
   vector_embedding: number[] | null;
   content_sample: string;
   file_type: string;
+  university?: string;
+  author?: string;
+  original_filename?: string;
+  drive_id?: string;
 };
-
-// For backward compatibility, keep NotebookInfo type
-export type NotebookInfo = FileInfo;
 
 export type SearchOptions = {
   query_text?: string;
@@ -90,7 +87,6 @@ export type SearchResult = {
   title?: string;
 };
 
-// Google Drive file information
 export type DriveFileInfo = {
   id: string;
   name: string;
@@ -100,4 +96,14 @@ export type DriveFileInfo = {
   modifiedTime?: string;
   size?: number;
   iconLink?: string;
+};
+
+export interface WebhookPayload {
+  secret: string;
+  processAll?: boolean;
+  fileIds?: string[];
+}
+
+export type FilterCriteria = {
+  [key: string]: any;
 };

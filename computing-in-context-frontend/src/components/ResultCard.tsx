@@ -1,5 +1,10 @@
-type resultCardProps = {
+import React from "react";
+import Link from "next/link";
+
+type ResultCardProps = {
   title: string;
+  author?: string;
+  university?: string;
   language: string;
   course_level: string;
   sequence_position: string;
@@ -10,8 +15,10 @@ type resultCardProps = {
   displayConfidenceScore?: boolean;
 };
 
-export default function ResultCard({
+const ResultCard: React.FC<ResultCardProps> = ({
   title,
+  author,
+  university,
   language,
   course_level,
   sequence_position,
@@ -19,83 +26,206 @@ export default function ResultCard({
   cs_concepts,
   confidenceScore,
   link,
-  displayConfidenceScore = true,
-}: resultCardProps) {
-  const confidenceColor =
-    confidenceScore >= 0.9
-      ? "bg-green-700"
-      : confidenceScore >= 0.8
-        ? "bg-green-600"
-        : confidenceScore >= 0.7
-          ? "bg-green-500"
-          : confidenceScore >= 0.6
-            ? "bg-green-400"
-            : confidenceScore >= 0.5
-              ? "bg-yellow-500"
-              : confidenceScore >= 0.4
-                ? "bg-yellow-600"
-                : confidenceScore >= 0.3
-                  ? "bg-orange-500"
-                  : confidenceScore >= 0.2
-                    ? "bg-orange-600"
-                    : confidenceScore >= 0.1
-                      ? "bg-red-500"
-                      : "bg-red-700";
+  displayConfidenceScore = false,
+}) => {
+  // Format concepts as a comma-separated list
+  const formattedConcepts = cs_concepts
+    .split(",")
+    .map((concept) => concept.trim())
+    .join(", ");
 
-  const textColor = confidenceColor.replace("bg-", "text-");
+  // Get the clean confidence score
+  const score = Math.round(confidenceScore * 100) / 100;
+
+  // Get confidence color and width
+  const getConfidenceColor = () => {
+    if (score >= 0.85) return "bg-green-500";
+    if (score >= 0.7) return "bg-blue-500";
+    if (score >= 0.5) return "bg-yellow-500";
+    return "bg-red-500";
+  };
+
+  const confidenceWidth = `${Math.min(100, Math.max(5, score * 100))}%`;
+
+  // Define language-specific styling
+  const getLanguageStyle = () => {
+    switch (language?.toLowerCase()) {
+      case "python":
+        return "bg-blue-100 text-blue-800 border border-blue-200";
+      case "javascript":
+        return "bg-yellow-100 text-yellow-800 border border-yellow-200";
+      case "java":
+        return "bg-red-100 text-red-800 border border-red-200";
+      default:
+        return "bg-gray-100 text-gray-800 border border-gray-200";
+    }
+  };
 
   return (
-    <a href={link} target="_blank" rel="noreferrer">
-      <div className="group relative rounded-lg bg-gray-100 p-4 shadow-md duration-300 hover:bg-gradient-to-r hover:shadow-lg hover:transition-all">
-        <h2 className="group-hover:from-secondary group-hover:to-tertiary inline bg-gradient-to-l from-gray-700 to-gray-700 bg-clip-text font-mono text-2xl font-bold text-transparent transition-all duration-300 group-hover:underline group-hover:decoration-black">
-          {removeExtraCharacters(title)}
-        </h2>
-        <div>
-          <span className="font-bold">Language:</span> {toTitleCase(language)}
-        </div>
-        <div>
-          <span className="font-bold">Course Level:</span> {course_level}
-        </div>
-        <div>
-          <span className="font-bold">Sequence Position:</span>{" "}
-          {toTitleCase(sequence_position)}
-        </div>
-        <div>
-          <span className="font-bold">Lesson Context:</span>{" "}
-          {toTitleCase(context)}
-        </div>
-        <div>
-          <span className="font-bold">Concepts Covered:</span>{" "}
-          {toTitleCase(cs_concepts)}
-        </div>
-        {displayConfidenceScore && (
-          <div className="flex items-center">
-            <span className={`${textColor}`}>
-              <span className="font-bold">Confidence Score: </span>
-              {(confidenceScore * 100).toPrecision(2)}%
-            </span>
+    <div className="group relative flex h-full flex-col overflow-hidden rounded-lg border border-gray-100 p-6 transition-all duration-200 hover:border-blue-100 hover:shadow-lg">
+      <div className="to-tertiary from-secondary absolute inset-0 z-0 bg-gradient-to-br opacity-0 transition-opacity duration-300 group-hover:opacity-100"></div>
 
-            <div className="ml-2 h-2 flex-1 rounded bg-gray-300">
-              <div
-                className={`h-2 rounded ${confidenceColor}`}
-                style={{ width: `${confidenceScore * 100}%` }}
-              />
+      <Link
+        href={link}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label={`View resource: ${title}`}
+      >
+        {/* Top badges section */}
+        <div className="relative z-10 mb-3 flex flex-wrap items-center gap-2">
+          <div
+            className={`${getLanguageStyle()} rounded-full px-3 py-1 text-xs font-medium`}
+          >
+            <span className="opacity-70">Language:</span>{" "}
+            {language || "Unknown"}
+          </div>
+
+          <div className="rounded-full border border-gray-200 bg-gray-100 px-3 py-1 text-xs font-medium text-gray-800">
+            <span className="opacity-70">Level:</span>{" "}
+            {course_level || "Any level"}
+          </div>
+
+          {sequence_position && (
+            <div className="rounded-full border border-gray-200 bg-gray-100 px-3 py-1 text-xs font-medium text-gray-800">
+              <span className="opacity-70">Position:</span> {sequence_position}
             </div>
+          )}
+        </div>
+
+        {/* Title with pill-shaped background */}
+        <div className="relative z-10 mb-4">
+          <h2 className="group-hover:text-primary inline-block rounded-lg bg-gradient-to-r from-gray-50 to-white px-4 py-2 text-xl leading-tight font-bold text-gray-900 shadow-sm transition-colors duration-200">
+            {title}
+          </h2>
+        </div>
+
+        {/* Author and University information - prominently displayed */}
+        {(author || university) && (
+          <div className="relative z-10 mb-4 flex items-center font-medium">
+            {author && (
+              <div className="flex items-center text-gray-700">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="mr-1.5 h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                  />
+                </svg>
+                <span>{author}</span>
+              </div>
+            )}
+
+            {author && university && (
+              <span className="mx-2 text-gray-400">•</span>
+            )}
+
+            {university && (
+              <div className="flex items-center text-gray-700">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="mr-1.5 h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
+                  />
+                </svg>
+                <span>{university}</span>
+              </div>
+            )}
           </div>
         )}
-      </div>
-    </a>
+
+        {/* Content section with improved spacing and styling */}
+        <div className="relative z-10 mb-4 grid grid-cols-1 gap-3 rounded-lg bg-gray-50 p-4 text-sm text-gray-600">
+          <div>
+            <span className="mb-1 block font-semibold text-gray-700">
+              Context
+            </span>
+            <p className="italic">{context || "Various contexts"}</p>
+          </div>
+
+          <div>
+            <span className="mb-1 block font-semibold text-gray-700">
+              Concepts
+            </span>
+            <p className="italic">
+              {formattedConcepts ? (
+                <span>
+                  {formattedConcepts.split(", ").map((concept, index) => (
+                    <span
+                      key={index}
+                      className="mr-1.5 mb-1.5 inline-block rounded border border-gray-200 bg-white px-2 py-0.5 text-xs"
+                    >
+                      {concept}
+                    </span>
+                  ))}
+                </span>
+              ) : (
+                "Various CS concepts"
+              )}
+            </p>
+          </div>
+        </div>
+
+        {/* Bottom section with score and view button */}
+        <div className="relative z-10 mt-auto flex flex-col gap-3">
+          {displayConfidenceScore && (
+            <div className="w-full">
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-xs font-medium text-gray-700">
+                  Relevance score
+                </span>
+                <span className="text-xs font-semibold">
+                  {(score * 100).toFixed(0)}%
+                </span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                <div
+                  className={`h-full ${getConfidenceColor()} rounded-full`}
+                  style={{ width: confidenceWidth }}
+                ></div>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center justify-end">
+            <div className="transform opacity-0 transition-all duration-200 group-hover:translate-x-0 group-hover:opacity-100">
+              <div className="text-primary flex items-center rounded-full bg-white px-3 py-1.5 text-sm font-medium">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="mr-1.5 h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                  />
+                </svg>
+                View Resource
+              </div>
+            </div>
+          </div>
+        </div>
+      </Link>
+    </div>
   );
-}
+};
 
-function removeExtraCharacters(str: string): string {
-  return str.replace(/"/g, "").trim();
-}
-
-function toTitleCase(str: string): string {
-  return str
-    .toLowerCase()
-    .split(" ")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-}
+export default ResultCard;
