@@ -1,5 +1,6 @@
 import React from "react";
 import Link from "next/link";
+import toTitleCase from "@/utils/toTitleCase";
 
 type ResultCardProps = {
   title: string;
@@ -231,13 +232,5 @@ const ResultCard: React.FC<ResultCardProps> = ({
     </div>
   );
 };
-
-function toTitleCase(str: string): string {
-  return str
-    .toLowerCase()
-    .split(" ")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-}
 
 export default ResultCard;

@@ -411,6 +411,71 @@ function getFileExtension(url: string): string {
 }
 
 /**
+ * Get all unique languages from the resources collection
+ * @returns Array of unique language values in the database
+ */
+export async function getUniqueLanguages(): Promise<string[]> {
+  try {
+    const db = await connectToDatabase();
+    const resources = db.collection("resources");
+
+    // Aggregate to find all unique language values
+    const result = await resources
+      .aggregate([
+        { $match: { language: { $exists: true, $nin: [null, ""] } } },
+        { $group: { _id: "$language" } },
+        { $sort: { _id: 1 } }, // Sort alphabetically
+      ])
+      .toArray();
+
+    // Extract language values from result
+    const languages = result.map((item) => item._id);
+
+    console.log(`Found ${languages.length} unique languages in the database`);
+    return languages;
+  } catch (error) {
+    console.error("Error getting unique languages:", error);
+    return []; // Return empty array on error
+  }
+}
+
+/**
+ * Get all unique values for a specific field from the resources collection
+ * @param field The field to get unique values for (e.g., "language", "course_level")
+ * @returns Array of unique values for the specified field
+ */
+export async function getUniqueFieldValues(field: string): Promise<string[]> {
+  try {
+    const db = await connectToDatabase();
+    const resources = db.collection("resources");
+
+    // Create a match condition that ensures the field exists and is not empty
+    const matchCondition: any = {};
+    matchCondition[field] = { $exists: true, $nin: [null, ""] };
+
+    // Aggregate to find all unique values for the specified field
+    const result = await resources
+      .aggregate([
+        { $match: matchCondition },
+        { $group: { _id: `$${field}` } },
+        { $sort: { _id: 1 } }, // Sort alphabetically
+      ])
+      .toArray();
+
+    // Extract field values from result
+    const values = result.map((item) => item._id);
+
+    console.log(
+      `Found ${values.length} unique values for ${field} in the database`,
+    );
+    return values;
+  } catch (error) {
+    console.error(`Error getting unique values for ${field}:`, error);
+    return []; // Return empty array on error
+  }
+}
+
+/**
  * Saves a resource to MongoDB
  * @param url The URL of the resource
  * @param content The content of the resource
