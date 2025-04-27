@@ -70,7 +70,10 @@ const ResultCard: React.FC<ResultCardProps> = ({
         target="_blank"
         rel="noopener noreferrer"
         aria-label={`View resource: ${title}`}
+        className="relative"
       >
+        <span className="absolute inset-0 z-10" aria-hidden="true"></span>
+
         {/* Top badges section */}
         <div className="relative z-10 mb-3 flex flex-wrap items-center gap-2">
           <div
@@ -93,14 +96,14 @@ const ResultCard: React.FC<ResultCardProps> = ({
           )}
         </div>
 
-        {/* Title with pill-shaped background */}
+        {/* Title */}
         <div className="relative z-10 mb-4">
           <h2 className="group-hover:text-primary inline-block rounded-lg bg-gradient-to-r from-gray-50 to-white px-4 py-2 text-xl leading-tight font-bold text-gray-900 shadow-sm transition-colors duration-200">
             {title}
           </h2>
         </div>
 
-        {/* Author and University information - prominently displayed */}
+        {/* Author and University information */}
         {(author || university) && (
           <div className="relative z-10 mb-4 flex items-center font-medium">
             {author && (
@@ -149,7 +152,7 @@ const ResultCard: React.FC<ResultCardProps> = ({
           </div>
         )}
 
-        {/* Content section with improved spacing and styling */}
+        {/* Content section */}
         <div className="relative z-10 mb-4 grid grid-cols-1 gap-3 rounded-lg bg-gray-50 p-4 text-sm text-gray-600">
           <div>
             <span className="mb-1 block font-semibold text-gray-700">

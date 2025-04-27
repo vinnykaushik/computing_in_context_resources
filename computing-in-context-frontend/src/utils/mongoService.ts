@@ -255,12 +255,13 @@ export async function searchResources(
           sequence_position: 1,
           cs_concepts: 1,
           vector_embedding: 1,
+          author: 1,
+          university: 1,
           file_type: 1,
           score: { $meta: "vectorSearchScore" },
         },
       });
 
-      // Log the pipeline for debugging
       if (process.env.NODE_ENV === "development") {
         console.log(
           "Search pipeline:",
@@ -268,11 +269,9 @@ export async function searchResources(
         );
       }
 
-      // Execute the aggregation and return results
       const results = await resources.aggregate(searchPipeline).toArray();
       return results;
     } catch (error) {
-      // Check if the error is related to the vector search index
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       if (
@@ -312,7 +311,6 @@ export async function getAllResources(
 
     const filterCriteria: Record<string, string | string[] | object> = {};
 
-    // Handle standard filters
     ["language", "course_level", "sequence_position", "file_type"].forEach(
       (field) => {
         if (filters[field]) {
@@ -325,7 +323,6 @@ export async function getAllResources(
       },
     );
 
-    // Add context search if provided
     if (filters.context && typeof filters.context === "string") {
       filterCriteria.context = { $regex: filters.context, $options: "i" };
     }
@@ -344,6 +341,8 @@ export async function getAllResources(
         sequence_position: 1,
         context: 1,
         cs_concepts: 1,
+        author: 1,
+        university: 1,
         file_type: 1,
       })
       .toArray();
