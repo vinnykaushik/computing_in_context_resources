@@ -15,6 +15,8 @@ export type SearchResult = {
   cs_concepts: string;
   snippet: string;
   score: number;
+  author?: string;
+  university?: string;
 };
 
 // Available filter options
@@ -31,6 +33,7 @@ export default function Home() {
   const [filters, setFilters] = useState<SearchFilters>({});
   const [showFilters, setShowFilters] = useState(false);
   const [isInfoModalOpen, setIsInfoModalOpen] = useState(true);
+  const [hasSearched, setHasSearched] = useState(false);
 
   const resetState = () => {
     setQuery("");
@@ -38,6 +41,7 @@ export default function Home() {
     setFilters({});
     setShowFilters(false);
     setIsLoading(true);
+    setHasSearched(false);
   };
 
   useEffect(() => {
@@ -71,16 +75,24 @@ export default function Home() {
       }
     }
 
-    fetchAllResources();
-  }, [filters]);
+    // Only fetch all resources if we haven't performed a search yet
+    if (!hasSearched) {
+      fetchAllResources();
+    } else if (Object.keys(filters).length > 0) {
+      // If we've already searched and filters change, apply filters to the search
+      handleSearch(null);
+    }
+  }, [filters, hasSearched]);
 
-  const handleSearch = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  const handleSearch = async (e: React.FormEvent<HTMLFormElement> | null) => {
+    if (e) {
+      e.preventDefault();
+    }
 
-    if (!query.trim()) return;
+    if (!query.trim() && !hasSearched) return;
 
     setIsLoading(true);
-    setResults([]);
+    setHasSearched(true);
 
     try {
       const response = await fetch("/api/search", {
@@ -171,7 +183,7 @@ export default function Home() {
 
       {/* Search section with modern UI */}
       <div className="mx-auto max-w-4xl px-8 py-6">
-        <div className="rounded-xl bg-white p-6 shadow-md">
+        <div className="ounded-xl bg-white p-6 shadow-md">
           <form onSubmit={handleSearch} className="mb-4 w-full">
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -425,6 +437,8 @@ export default function Home() {
                       >
                         <ResultCard
                           title={result.title || "FILLER"}
+                          author={result.author}
+                          university={result.university}
                           language={result.language}
                           course_level={result.course_level}
                           context={result.context}
