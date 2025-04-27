@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import "./globals.css";
 import ResultCard from "@/components/ResultCard";
 import InfoModal from "@/components/InfoModal";
+import toTitleCase from "@/utils/toTitleCase";
+import Hero from "@/components/Hero";
 
 export type SearchResult = {
   title: string;
@@ -33,6 +35,45 @@ export default function Home() {
   const [showFilters, setShowFilters] = useState(false);
   const [isInfoModalOpen, setIsInfoModalOpen] = useState(true);
   const [hasSearched, setHasSearched] = useState(false);
+
+  // State for dynamic filter options
+  const [languageOptions, setLanguageOptions] = useState<string[]>([]);
+  const [courseLevelOptions, setCourseLevelOptions] = useState<string[]>([]);
+  const [sequencePositionOptions, setSequencePositionOptions] = useState<
+    string[]
+  >([]);
+
+  useEffect(() => {
+    async function fetchFilterOptions() {
+      try {
+        const languageResponse = await fetch(
+          "/api/unique-values?field=language",
+        );
+        if (languageResponse.ok) {
+          const languages = await languageResponse.json();
+          setLanguageOptions(languages);
+        }
+        const courseLevelResponse = await fetch(
+          "/api/unique-values?field=course_level",
+        );
+        if (courseLevelResponse.ok) {
+          const courseLevels = await courseLevelResponse.json();
+          setCourseLevelOptions(courseLevels);
+        }
+        const sequencePositionResponse = await fetch(
+          "/api/unique-values?field=sequence_position",
+        );
+        if (sequencePositionResponse.ok) {
+          const sequencePositions = await sequencePositionResponse.json();
+          setSequencePositionOptions(sequencePositions);
+        }
+      } catch (error) {
+        console.error("Error fetching filter options:", error);
+      }
+    }
+
+    fetchFilterOptions();
+  }, []);
 
   const resetState = () => {
     setQuery("");
@@ -121,7 +162,6 @@ export default function Home() {
     }
   };
 
-  // Function to highlight quoted phrases in the query
   const highlightPhrases = () => {
     if (!query) return null;
 
@@ -131,7 +171,6 @@ export default function Home() {
     let match;
 
     while ((match = regex.exec(query)) !== null) {
-      // Add text before the match
       if (match.index > lastIndex) {
         parts.push(
           <span key={`text-${lastIndex}`}>
@@ -140,7 +179,6 @@ export default function Home() {
         );
       }
 
-      // Add the quoted phrase with highlighting
       parts.push(
         <span
           key={`phrase-${match.index}`}
@@ -153,7 +191,6 @@ export default function Home() {
       lastIndex = match.index + match[0].length;
     }
 
-    // Add any remaining text
     if (lastIndex < query.length) {
       parts.push(
         <span key={`text-${lastIndex}`}>{query.substring(lastIndex)}</span>,
@@ -165,24 +202,11 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
-      {/* Hero section with updated visuals */}
-      <div className="relative overflow-hidden bg-white shadow-sm">
-        <div className="mx-auto max-w-4xl px-8 py-16">
-          <div onClick={resetState} className="cursor-pointer text-center">
-            <h1 className="from-secondary to-tertiary bg-gradient-to-r bg-clip-text pb-2 text-4xl font-extrabold tracking-tight text-transparent sm:text-5xl">
-              Computing in Context
-            </h1>
-            <p className="mx-auto mt-4 max-w-2xl text-lg text-gray-600">
-              Find CS lessons that connect abstract concepts with real-world
-              problems
-            </p>
-          </div>
-        </div>
-      </div>
+      <Hero resetSearch={resetState} />
 
-      {/* Search section with modern UI */}
+      {/* Search section */}
       <div className="mx-auto max-w-4xl px-8 py-6">
-        <div className="ounded-xl bg-white p-6 shadow-md">
+        <div className="rounded-xl bg-white p-6 shadow-md">
           <form onSubmit={handleSearch} className="mb-4 w-full">
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -330,7 +354,7 @@ export default function Home() {
               {showFilters && (
                 <div className="mt-2 rounded-lg bg-gray-50 p-5 shadow-inner transition-all duration-200">
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                    {/* Language filter */}
+                    {/* Language filter with dynamic options */}
                     <div>
                       <label className="mb-1 block text-sm font-medium text-gray-700">
                         Language
@@ -346,13 +370,15 @@ export default function Home() {
                         className="w-full rounded-lg border border-gray-200 p-2 shadow-sm focus:border-blue-300 focus:ring-2 focus:ring-blue-100 focus:outline-none"
                       >
                         <option value="">Any language</option>
-                        <option value="python">Python</option>
-                        <option value="javascript">JavaScript</option>
-                        <option value="java">Java</option>
+                        {languageOptions.map((language) => (
+                          <option key={language} value={language}>
+                            {toTitleCase(language)}
+                          </option>
+                        ))}
                       </select>
                     </div>
 
-                    {/* Course level filter */}
+                    {/* Course level filter with dynamic options */}
                     <div>
                       <label className="mb-1 block text-sm font-medium text-gray-700">
                         Course Level
@@ -368,14 +394,15 @@ export default function Home() {
                         className="w-full rounded-lg border border-gray-200 p-2 shadow-sm focus:border-blue-300 focus:ring-2 focus:ring-blue-100 focus:outline-none"
                       >
                         <option value="">Any level</option>
-                        <option value="CS0">CS0</option>
-                        <option value="CS1">CS1</option>
-                        <option value="CS2">CS2</option>
-                        <option value="CS3">CS3</option>
+                        {courseLevelOptions.map((level) => (
+                          <option key={level} value={level}>
+                            {level}
+                          </option>
+                        ))}
                       </select>
                     </div>
 
-                    {/* Sequence Position filter */}
+                    {/* Sequence Position filter with dynamic options */}
                     <div>
                       <label className="mb-1 block text-sm font-medium text-gray-700">
                         Sequence Position
@@ -391,9 +418,11 @@ export default function Home() {
                         className="w-full rounded-lg border border-gray-200 p-2 shadow-sm focus:border-blue-300 focus:ring-2 focus:ring-blue-100 focus:outline-none"
                       >
                         <option value="">Any Position</option>
-                        <option value="Beginning">Beginning</option>
-                        <option value="Middle">Middle</option>
-                        <option value="End">End</option>
+                        {sequencePositionOptions.map((position) => (
+                          <option key={position} value={position}>
+                            {toTitleCase(position)}
+                          </option>
+                        ))}
                       </select>
                     </div>
                   </div>
@@ -403,7 +432,7 @@ export default function Home() {
           </form>
         </div>
 
-        {/* Results section */}
+        {/* Results section - remaining code unchanged */}
         <div className="mt-6">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
