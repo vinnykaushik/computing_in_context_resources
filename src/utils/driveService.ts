@@ -1,4 +1,3 @@
-import { OAuth2Client } from "google-auth-library";
 import { google } from "googleapis";
 import { Stream } from "stream";
 // import { authenticate } from "@google-cloud/local-auth";
@@ -8,7 +7,7 @@ import { DriveFileInfo, FileContent } from "./types";
 
 const TOKEN_PATH = path.join(process.cwd(), "token.json");
 const CREDENTIALS_PATH = path.join(process.cwd(), "credentials.json");
-
+type OAuth2Client = typeof google.auth.OAuth2.prototype;
 /**
  * Load or request or authorization to call APIs.
  *

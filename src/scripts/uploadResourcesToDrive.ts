@@ -1,8 +1,7 @@
-import axios from "axios";
+import { request } from "gaxios";
 import * as process from "process";
 import { resourceLinks } from "./resourceLinks";
 import { google } from "googleapis";
-import { OAuth2Client } from "google-auth-library";
 import { Readable } from "stream";
 import * as dotenv from "dotenv";
 import { authorize, getFileType } from "@/utils/driveService";
@@ -16,6 +15,8 @@ const SCOPES = [
   "https://www.googleapis.com/auth/drive.readonly",
 ];
 const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
+
+type OAuth2Client = typeof google.auth.OAuth2.prototype;
 
 // Define allowed resource source types and their configs
 interface ResourceSourceConfig {
@@ -270,14 +271,25 @@ async function downloadFileAndUploadToDrive(
     const downloadUrl = sourceConfig.convertUrlFunction(url);
     console.log(`Downloading from ${sourceType}: ${downloadUrl}`);
 
-    // Download the file
-    const response = await axios.get(downloadUrl, {
+    // Download the file using Gaxios
+    const response = await request({
+      url: downloadUrl,
       responseType: "arraybuffer",
       headers: {
         // Add GitHub token if available and it's a GitHub URL
         ...(process.env.GITHUB_TOKEN && sourceType.includes("github.com")
           ? { Authorization: `token ${process.env.GITHUB_TOKEN}` }
           : {}),
+      },
+      // Add retry configuration
+      retry: true,
+      retryConfig: {
+        retry: 3,
+        retryDelay: 100,
+        statusCodesToRetry: [[500, 599]],
+        onRetryAttempt: (err) => {
+          console.log(`Retry attempt due to ${err.message}`);
+        },
       },
     });
 
@@ -288,7 +300,9 @@ async function downloadFileAndUploadToDrive(
     // Check if this is a HTML response (which could be an auth page)
     const contentType = response.headers["content-type"];
     if (contentType && contentType.includes("text/html")) {
-      const content = Buffer.from(response.data).toString("utf8");
+      const content = Buffer.from(response.data as ArrayBuffer).toString(
+        "utf8",
+      );
       if (isAuthPage(content)) {
         console.log(`Authentication required for ${url}. Skipping.`);
         return;
@@ -296,7 +310,7 @@ async function downloadFileAndUploadToDrive(
     }
 
     // Create a readable stream from the response
-    const fileStream = Readable.from(Buffer.from(response.data));
+    const fileStream = Readable.from(Buffer.from(response.data as ArrayBuffer));
 
     // Upload to Drive
     await uploadToDrive(authClient, fileStream, fileName, folderId);
