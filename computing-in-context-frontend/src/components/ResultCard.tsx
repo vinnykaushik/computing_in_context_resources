@@ -105,7 +105,7 @@ const ResultCard: React.FC<ResultCardProps> = ({
 
         {/* Author and University information */}
         {(author || university) && (
-          <div className="relative z-10 mb-4 flex items-center font-medium">
+          <div className="relative z-10 mb-4 flex w-fit items-center rounded-full bg-gradient-to-r from-gray-50 to-white px-4 py-2 font-medium shadow-sm">
             {author && (
               <div className="flex items-center text-gray-700">
                 <svg
@@ -153,7 +153,7 @@ const ResultCard: React.FC<ResultCardProps> = ({
         )}
 
         {/* Content section */}
-        <div className="relative z-10 mb-4 grid grid-cols-1 gap-3 rounded-lg bg-gray-50 p-4 text-sm text-gray-600">
+        <div className="relative z-10 mb-4 grid grid-cols-1 gap-3 rounded-lg bg-gray-50 p-4 text-sm text-gray-600 shadow-sm">
           <div>
             <span className="mb-1 block font-semibold text-gray-700">
               Context
