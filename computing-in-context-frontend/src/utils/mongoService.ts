@@ -2,7 +2,12 @@ import dotenv from "dotenv";
 import { MongoClient } from "mongodb";
 import * as mongoDb from "mongodb";
 import { OpenAI } from "openai";
-import { ResourceDocument, FileContent, FileInfo } from "./types";
+import {
+  ResourceDocument,
+  FileContent,
+  FileInfo,
+  BinaryContent,
+} from "./types";
 import { createEnhancedQueryText, logQueryParsing } from "./phraseAwareSearch";
 import * as fs from "fs";
 import * as path from "path";
@@ -424,31 +429,42 @@ export async function saveToMongoDB(
     return;
   }
 
-  // For Jupyter notebooks, ensure proper format
   const fileType = info.file_type || getFileExtension(url);
   let processedContent: FileContent = content;
 
-  if (fileType === "notebook" || fileType === "ipynb") {
+  if (
+    fileType === "docx" &&
+    typeof content === "object" &&
+    content !== null &&
+    "data" in content
+  ) {
+    const binaryContent = content as BinaryContent;
+
+    if (binaryContent.extractedText) {
+      processedContent = {
+        data: binaryContent.data,
+        mimeType:
+          binaryContent.mimeType ||
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        extractedText: binaryContent.extractedText,
+      };
+    }
+  } else if (fileType === "notebook" || fileType === "ipynb") {
     if (typeof content === "string") {
       try {
         processedContent = JSON.parse(content);
       } catch (e) {
         console.log(`Content for ${url} is not a valid notebook format`, e);
-        // Store as string if parsing fails
         processedContent = { text: content as string };
       }
     }
   } else if (typeof content === "string") {
-    // Store text content directly
     processedContent = content;
   } else if (Buffer.isBuffer(content)) {
-    // Convert Buffer to string for storage
     processedContent = content.toString("base64");
   } else if (typeof content === "object" && !Array.isArray(content)) {
-    // Keep objects as is
     processedContent = content;
   } else {
-    // Try to convert anything else to string
     try {
       processedContent = JSON.stringify(content);
     } catch (e) {
@@ -469,13 +485,16 @@ export async function saveToMongoDB(
     vector_embedding: info.vector_embedding ?? undefined,
     content_sample: info.content_sample,
     file_type: info.file_type || fileType,
+    author: info.author,
+    university: info.university,
+    drive_id: info.drive_id,
     metadata_processed: true,
     date_saved: new Date(),
   };
 
   await resources.insertOne(resource);
   console.log(
-    `Saved ${url} to MongoDB as ${resource.file_type || "unknown type"}`,
+    `Saved ${url} to MongoDB as ${resource.file_type || "unknown type"} by ${resource.author || "unknown author"} from ${resource.university || "unknown university"}`,
   );
 }
 
