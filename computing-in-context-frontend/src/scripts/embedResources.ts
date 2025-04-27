@@ -394,6 +394,7 @@ export async function extractFileInfo(
   let title = "";
   let language = "";
   let context = "general programming";
+  let description = "No description available";
   let sequencePosition = "middle";
   let level = "CS1";
   let csConcepts = "";
@@ -551,6 +552,29 @@ export async function extractFileInfo(
         error instanceof Error ? error.message : String(error);
       console.error(`Error determining sequence position: ${errorMessage}`);
     }
+    try {
+      const descriptionPrompt = `
+        Examine the content below and look for a description paragraph. If found, return it.
+        If not, return a brief summary of the content, discussing the main concepts, topics,
+        and methods covered in the content.
+        Do not include any introduction or explanation.
+        Content: ${textContent.substring(0, 4000)}
+        `;
+      const response: ChatCompletion = await withRateLimitRetry(() =>
+        openai_client.chat.completions.create({
+          model: REASONING_MODEL,
+          messages: [{ role: "user", content: descriptionPrompt }],
+        }),
+      );
+
+      if (response.choices[0].message.content) {
+        description = response.choices[0].message.content.trim();
+      }
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      console.error(`Error extracting description: ${errorMessage}`);
+    }
 
     const programmingFileTypes = [
       "notebook",
@@ -675,6 +699,7 @@ export async function extractFileInfo(
     course_level: level,
     cs_concepts: csConcepts,
     context,
+    description,
     sequence_position: sequencePosition,
     vector_embedding: embedding,
     content_sample: textContent.substring(0, 500),

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { searchResources, getAllResources } from "@/utils/mongoService";
-import { SearchResult } from "@/app/page";
+import { SearchResult } from "@/utils/types";
 
 /**
  * GET route handler to fetch all resources
@@ -42,6 +42,7 @@ export async function GET(request: Request) {
       course_level: doc.course_level || "Not specified",
       sequence_position: doc.sequence_position || "Not specified",
       context: doc.context || "Not specified",
+      description: doc.description || "No description available",
       cs_concepts: doc.cs_concepts || "Not specified",
       author: doc.author || "",
       university: doc.university || "",
@@ -114,6 +115,7 @@ export async function POST(request: Request) {
       course_level: doc.course_level || "course_level",
       sequence_position: doc.sequence_position || "sequence_position",
       context: doc.context || "context",
+      description: doc.description || "description",
       cs_concepts: doc.cs_concepts || "cs_concepts",
       author: doc.author || "",
       university: doc.university || "",

@@ -6,26 +6,7 @@ import ResultCard from "@/components/ResultCard";
 import InfoModal from "@/components/InfoModal";
 import toTitleCase from "@/utils/toTitleCase";
 import Hero from "@/components/Hero";
-
-export type SearchResult = {
-  title: string;
-  url: string;
-  language: string;
-  course_level: string;
-  sequence_position: string;
-  context: string;
-  cs_concepts: string;
-  score: number;
-  author?: string;
-  university?: string;
-};
-
-// Available filter options
-export type SearchFilters = {
-  language?: string;
-  course_level?: string;
-  sequence_position?: string;
-};
+import { SearchResult, SearchFilters } from "@/utils/types";
 
 export default function Home() {
   const [query, setQuery] = useState("");
@@ -432,7 +413,7 @@ export default function Home() {
           </form>
         </div>
 
-        {/* Results section - remaining code unchanged */}
+        {/* Results section */}
         <div className="mt-6">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
@@ -470,6 +451,7 @@ export default function Home() {
                           language={result.language}
                           course_level={result.course_level}
                           context={result.context}
+                          description={result.description}
                           sequence_position={result.sequence_position}
                           cs_concepts={result.cs_concepts}
                           confidenceScore={result.score}

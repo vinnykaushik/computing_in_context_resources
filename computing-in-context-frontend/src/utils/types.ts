@@ -10,6 +10,7 @@ export type ResourceDocument = {
   course_level?: string;
   cs_concepts?: string;
   context?: string;
+  description?: string;
   sequence_position?: string;
   vector_embedding?: number[];
   content_sample?: string;
@@ -56,6 +57,7 @@ export type FileInfo = {
   course_level: string;
   cs_concepts: string;
   context: string;
+  description: string;
   sequence_position: string;
   vector_embedding: number[] | null;
   content_sample: string;
@@ -76,16 +78,23 @@ export type SearchOptions = {
 };
 
 export type SearchResult = {
+  title: string;
   url: string;
+  language: string;
+  course_level: string;
+  sequence_position: string;
+  context: string;
+  description: string;
+  cs_concepts: string;
+  score: number;
+  author?: string;
+  university?: string;
+};
+
+export type SearchFilters = {
   language?: string;
   course_level?: string;
-  context?: string;
   sequence_position?: string;
-  cs_concepts?: string;
-  content_sample?: string;
-  score?: number;
-  file_type?: string;
-  title?: string;
 };
 
 export type DriveFileInfo = {

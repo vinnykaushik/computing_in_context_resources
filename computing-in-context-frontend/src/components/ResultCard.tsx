@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import toTitleCase from "@/utils/toTitleCase";
 
@@ -10,6 +10,7 @@ type ResultCardProps = {
   course_level: string;
   sequence_position: string;
   context: string;
+  description: string;
   cs_concepts: string;
   confidenceScore: number;
   link: string;
@@ -24,11 +25,14 @@ const ResultCard: React.FC<ResultCardProps> = ({
   course_level,
   sequence_position,
   context,
+  description,
   cs_concepts,
   confidenceScore,
   link,
   displayConfidenceScore = false,
 }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
   // Format concepts as a comma-separated list
   const formattedConcepts = cs_concepts
     .split(",")
@@ -62,9 +66,27 @@ const ResultCard: React.FC<ResultCardProps> = ({
     }
   };
 
+  // Add an additional style to create an ellipsis effect for truncated text
+  const getEllipsisStyle = (): React.CSSProperties => {
+    if (!isExpanded) {
+      return {
+        display: "-webkit-box",
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: "vertical",
+        overflow: "hidden",
+        position: "relative",
+      } as React.CSSProperties;
+    }
+    return {};
+  };
+
   return (
-    <div className="group relative flex h-full flex-col overflow-hidden rounded-lg border border-gray-100 p-6 transition-all duration-200 hover:border-blue-100 hover:shadow-lg">
-      <div className="to-tertiary from-secondary absolute inset-0 z-0 bg-gradient-to-br opacity-0 transition-opacity duration-300 group-hover:opacity-100"></div>
+    <div
+      className="group relative flex h-full flex-col overflow-hidden rounded-lg border border-gray-100 p-6 transition-all duration-500 hover:border-blue-100 hover:shadow-lg"
+      onMouseEnter={() => setIsExpanded(true)}
+      onMouseLeave={() => setIsExpanded(false)}
+    >
+      <div className="to-tertiary from-secondary absolute inset-0 z-0 bg-gradient-to-br opacity-0 transition-opacity duration-500 group-hover:opacity-100"></div>
 
       <Link
         href={link}
@@ -162,6 +184,40 @@ const ResultCard: React.FC<ResultCardProps> = ({
             <p className="italic">{context || "Various contexts"}</p>
           </div>
 
+          {/* Description - Added section with line clamp and ellipsis */}
+          <div>
+            <span className="mb-1 block font-semibold text-gray-700">
+              Description
+            </span>
+            <div
+              className="overflow-hidden transition-all duration-500"
+              style={{ maxHeight: isExpanded ? "500px" : "3rem" }}
+            >
+              <p className="italic" style={getEllipsisStyle()}>
+                {description || "No description available"}
+              </p>
+            </div>
+            {!isExpanded && description.length > 150 && (
+              <div className="text-primary mt-1 flex items-center text-xs">
+                <span>More</span>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="ml-1 h-3 w-3"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
+              </div>
+            )}
+          </div>
+
           <div>
             <span className="mb-1 block font-semibold text-gray-700">
               Concepts
@@ -207,7 +263,7 @@ const ResultCard: React.FC<ResultCardProps> = ({
           )}
 
           <div className="flex items-center justify-end">
-            <div className="transform opacity-0 transition-all duration-200 group-hover:translate-x-0 group-hover:opacity-100">
+            <div className="transform opacity-0 transition-all duration-500 group-hover:translate-x-0 group-hover:opacity-100">
               <div className="text-primary flex items-center rounded-full bg-white px-3 py-1.5 text-sm font-medium">
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
