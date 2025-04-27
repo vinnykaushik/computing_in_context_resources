@@ -13,7 +13,6 @@ export type SearchResult = {
   sequence_position: string;
   context: string;
   cs_concepts: string;
-  snippet: string;
   score: number;
   author?: string;
   university?: string;

@@ -43,6 +43,9 @@ export async function GET(request: Request) {
       sequence_position: doc.sequence_position || "Not specified",
       context: doc.context || "Not specified",
       cs_concepts: doc.cs_concepts || "Not specified",
+      author: doc.author || "",
+      university: doc.university || "",
+      file_type: doc.file_type || "",
     }));
 
     if (process.env.NODE_ENV === "development") {
@@ -105,7 +108,6 @@ export async function POST(request: Request) {
 
     const results: SearchResult[] = documents.map((doc) => ({
       title: doc.title || "Filler",
-      snippet: doc.content || "content",
       score: doc.score || 0,
       url: doc.url || "url",
       language: doc.language || "lang",
@@ -113,6 +115,9 @@ export async function POST(request: Request) {
       sequence_position: doc.sequence_position || "sequence_position",
       context: doc.context || "context",
       cs_concepts: doc.cs_concepts || "cs_concepts",
+      author: doc.author || "",
+      university: doc.university || "",
+      file_type: doc.file_type || "",
     }));
 
     if (process.env.NODE_ENV === "development") {

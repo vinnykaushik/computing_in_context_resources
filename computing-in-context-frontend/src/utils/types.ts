@@ -17,6 +17,7 @@ export type ResourceDocument = {
   file_type?: string;
   author?: string;
   university?: string;
+  original_filename?: string;
   drive_id?: string;
 };
 

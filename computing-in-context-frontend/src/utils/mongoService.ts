@@ -487,6 +487,7 @@ export async function saveToMongoDB(
     file_type: info.file_type || fileType,
     author: info.author,
     university: info.university,
+    original_filename: info.original_filename,
     drive_id: info.drive_id,
     metadata_processed: true,
     date_saved: new Date(),
@@ -504,24 +505,20 @@ export async function exportResourcesFromMongoDB(
   const db = await connectToDatabase();
   const resources = db.collection("resources");
 
-  // Create output directory if it doesn't exist
   if (!fs.existsSync(output_dir)) {
     fs.mkdirSync(output_dir);
     console.log(`Created output directory: ${output_dir}`);
   }
 
-  // Query all resources from MongoDB
   const all_resources = await resources.find({}).toArray();
   let count = 0;
 
   for (const resource of all_resources) {
     try {
-      // Extract a filename from the URL
       const url = resource.url;
       let filename = "";
       let extension = resource.file_type || "";
 
-      // Add file extension based on file_type if not already present
       if (extension === "notebook") {
         extension = "ipynb";
       } else if (extension === "javascript") {
@@ -532,41 +529,31 @@ export async function exportResourcesFromMongoDB(
         extension = "py";
       }
 
-      // Generate an appropriate filename
       if (url.includes("colab.research.google.com")) {
-        // For Colab, use the file ID as the filename
         const file_id = url.split("/").pop() || "";
         filename = `colab_${file_id}`;
       } else if (url.includes("github.com")) {
-        // For GitHub, use the repo and filename
         const parts = url.replace("https://github.com/", "").split("/");
-        const repo = parts.slice(0, 2).join("_"); // org_repo
+        const repo = parts.slice(0, 2).join("_");
         filename = `github_${repo}_${parts[parts.length - 1]}`;
         if (filename.includes("blob")) {
-          // Clean up filename if it contains 'blob'
           filename = filename.replace("blob_", "");
         }
       } else if (url.includes("drive.google.com")) {
-        // For Google Drive, use the file ID
         const file_id = url.match(/[-\w]{25,}/) || ["unknown"];
         filename = `drive_${file_id[0]}`;
       } else {
-        // Generic fallback
         filename = `resource_${count}`;
       }
 
-      // Add extension if not already present in filename
       if (extension && !filename.endsWith(`.${extension}`)) {
         filename += `.${extension}`;
       } else if (!filename.includes(".")) {
-        // Default to .txt if no extension can be determined
         filename += ".txt";
       }
 
-      // Create full path
       const filepath = path.join(output_dir, filename);
 
-      // Write content to file
       let fileContent: string;
 
       if (typeof resource.content === "string") {

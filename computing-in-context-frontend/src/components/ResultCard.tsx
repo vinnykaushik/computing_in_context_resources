@@ -77,7 +77,7 @@ const ResultCard: React.FC<ResultCardProps> = ({
             className={`${getLanguageStyle()} rounded-full px-3 py-1 text-xs font-medium`}
           >
             <span className="opacity-70">Language:</span>{" "}
-            {language || "Unknown"}
+            {toTitleCase(language) || "Unknown"}
           </div>
 
           <div className="rounded-full border border-gray-200 bg-gray-100 px-3 py-1 text-xs font-medium text-gray-800">
@@ -87,7 +87,8 @@ const ResultCard: React.FC<ResultCardProps> = ({
 
           {sequence_position && (
             <div className="rounded-full border border-gray-200 bg-gray-100 px-3 py-1 text-xs font-medium text-gray-800">
-              <span className="opacity-70">Position:</span> {sequence_position}
+              <span className="opacity-70">Position:</span>{" "}
+              {toTitleCase(sequence_position)}
             </div>
           )}
         </div>
@@ -227,5 +228,13 @@ const ResultCard: React.FC<ResultCardProps> = ({
     </div>
   );
 };
+
+function toTitleCase(str: string): string {
+  return str
+    .toLowerCase()
+    .split(" ")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
 
 export default ResultCard;
