@@ -114,7 +114,7 @@ const ResultCard: React.FC<ResultCardProps> = ({
           {sequence_position && (
             <div className="rounded-full border border-gray-200 bg-gray-100 px-3 py-1 text-xs font-medium text-gray-800">
               <span className="opacity-70">Position:</span>{" "}
-              {toTitleCase(sequence_position)}
+              {toTitleCase(sequence_position)} of Course
             </div>
           )}
         </div>
@@ -128,7 +128,7 @@ const ResultCard: React.FC<ResultCardProps> = ({
 
         {/* Author and University information */}
         {(author || university) && (
-          <div className="relative z-10 mb-4 flex w-fit items-center rounded-full bg-gradient-to-r from-gray-50 to-white px-4 py-2 font-medium shadow-sm">
+          <div className="relative z-10 mb-4 flex w-fit items-center rounded-lg bg-gradient-to-r from-gray-50 to-white px-4 py-2 font-medium shadow-sm">
             {author && (
               <div className="flex items-center text-gray-700">
                 <svg
