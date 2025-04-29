@@ -28,13 +28,16 @@ export async function POST(request: NextRequest) {
 
       console.log("Received payload:", payload);
       console.log("Should process all files:", shouldProcessAll);
-      processGoogleDriveFiles(!shouldProcessAll)
-        .then(() => {
-          console.log("Webhook-triggered processing completed successfully");
-        })
-        .catch((error) => {
-          console.error("Error in webhook-triggered processing:", error);
-        });
+      try {
+        await processGoogleDriveFiles(!shouldProcessAll);
+        console.log("Webhook-triggered processing completed successfully");
+      } catch (error) {
+        console.error("Error in webhook-triggered processing:", error);
+        return NextResponse.json(
+          { message: "Error in embedding process" },
+          { status: 500 },
+        );
+      }
 
       return NextResponse.json(
         { message: "Embedding process started successfully" },
