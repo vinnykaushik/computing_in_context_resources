@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import "./globals.css";
 import ResultCard from "@/components/ResultCard";
 import InfoModal from "@/components/InfoModal";
@@ -73,6 +73,46 @@ export default function Home() {
     setHasSearched(false);
   };
 
+  const handleSearch = useCallback(
+    async (e: React.FormEvent<HTMLFormElement> | null) => {
+      if (e) {
+        e.preventDefault();
+      }
+
+      if (!query.trim() && !hasSearched) return;
+
+      setIsLoading(true);
+      setHasSearched(true);
+
+      try {
+        const response = await fetch("/api/search", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ query, filters }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error("Search response error:", response.status, errorData);
+          throw new Error(`Search failed with status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        setResults(data);
+      } catch (error) {
+        console.error("Search error:", error);
+        alert(
+          `Search failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [query, filters, hasSearched],
+  );
+
   useEffect(() => {
     async function fetchAllResources() {
       setIsLoading(true);
@@ -105,52 +145,12 @@ export default function Home() {
       }
     }
 
-    // Only fetch all resources if we haven't performed a search yet
     if (!hasSearched) {
       fetchAllResources();
     } else if (Object.keys(filters).length > 0) {
-      // If we've already searched and filters change, apply filters to the search
       handleSearch(null);
     }
-  }, [filters, hasSearched]);
-
-  const handleSearch = async (e: React.FormEvent<HTMLFormElement> | null) => {
-    if (e) {
-      e.preventDefault();
-    }
-
-    if (!query.trim() && !hasSearched) return;
-
-    setIsLoading(true);
-    setHasSearched(true);
-
-    try {
-      const response = await fetch("/api/search", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ query, filters }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error("Search response error:", response.status, errorData);
-        throw new Error(`Search failed with status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      setResults(data);
-    } catch (error) {
-      console.error("Search error:", error);
-      // Display error message to user
-      alert(
-        `Search failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  }, [filters, hasSearched, handleSearch]);
 
   const highlightPhrases = () => {
     if (!query) return null;

@@ -119,5 +119,5 @@ export interface WebhookPayload {
 }
 
 export type FilterCriteria = {
-  [key: string]: any;
+  [key: string]: unknown;
 };
