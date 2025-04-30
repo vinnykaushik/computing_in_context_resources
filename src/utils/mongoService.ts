@@ -449,20 +449,20 @@ export async function getUniqueFieldValues(field: string): Promise<string[]> {
     const db = await connectToDatabase();
     const resources = db.collection("resources");
 
-    // Create a match condition that ensures the field exists and is not empty
-    const matchCondition: any = {};
+    const matchCondition: Record<
+      string,
+      { $exists: boolean; $nin: (null | string)[] }
+    > = {};
     matchCondition[field] = { $exists: true, $nin: [null, ""] };
 
-    // Aggregate to find all unique values for the specified field
     const result = await resources
       .aggregate([
         { $match: matchCondition },
         { $group: { _id: `$${field}` } },
-        { $sort: { _id: 1 } }, // Sort alphabetically
+        { $sort: { _id: 1 } },
       ])
       .toArray();
 
-    // Extract field values from result
     const values = result.map((item) => item._id);
 
     console.log(
@@ -471,7 +471,7 @@ export async function getUniqueFieldValues(field: string): Promise<string[]> {
     return values;
   } catch (error) {
     console.error(`Error getting unique values for ${field}:`, error);
-    return []; // Return empty array on error
+    return [];
   }
 }
 
