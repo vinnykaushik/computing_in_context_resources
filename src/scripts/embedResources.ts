@@ -38,7 +38,7 @@ const openai_client = new OpenAI({
 async function withRateLimitRetry<T>(
   operation: () => Promise<T>,
   maxRetries: number = 5,
-  initialDelay: number = 60000,
+  initialDelay: number = 10000,
   backoffFactor: number = 1.5,
 ): Promise<T> {
   let retries = 0;
