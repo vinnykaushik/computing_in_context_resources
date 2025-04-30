@@ -218,11 +218,13 @@ export function getFileType(fileName: string, mimeType?: string): string {
  *
  * @param folderId The ID of the Google Drive folder to list resources from
  * @param fileTypes Optional array of file types to filter by (extensions without dots)
+ * @param maxFiles Optional maximum number of files to retrieve (default: no limit)
  * @returns all resources in the specified folder
  */
 export async function listResourcesInDrive(
   folderId: string,
   fileTypes?: string[],
+  maxFiles?: number,
 ): Promise<DriveFileInfo[]> {
   try {
     const auth = await authorize();
@@ -231,29 +233,72 @@ export async function listResourcesInDrive(
     const query = buildDriveQuery(folderId, fileTypes);
     console.log(`Listing files from Google Drive with query: ${query}`);
 
-    const response = await drive.files.list({
-      q: query,
-      fields:
-        "files(id, name, mimeType, webViewLink, createdTime, modifiedTime, size, iconLink)",
-      pageSize: 100,
-      supportsAllDrives: true,
-      includeItemsFromAllDrives: true,
-    });
+    let allFiles: DriveFileInfo[] = [];
+    let nextPageToken: string | undefined = undefined;
+    let filesCount = 0;
 
-    const files = response.data.files || [];
+    // Set a reasonable page size (Google's max is 1000, but 100 is often more stable)
+    const pageSize = 100;
 
-    console.log(`Found ${files.length} files in Google Drive folder`);
+    // Continue fetching pages until there are no more or we hit maxFiles
+    do {
+      console.log(`Fetching page ${nextPageToken ? "with token" : "1"}...`);
 
-    return files.map((file) => ({
-      id: file.id || "",
-      name: file.name || "",
-      mimeType: file.mimeType || undefined,
-      webViewLink: file.webViewLink || undefined,
-      createdTime: file.createdTime || undefined,
-      modifiedTime: file.modifiedTime || undefined,
-      size: file.size ? parseInt(file.size) : undefined,
-      iconLink: file.iconLink || undefined,
-    }));
+      const response = (await drive.files.list({
+        q: query,
+        fields:
+          "nextPageToken, files(id, name, mimeType, webViewLink, createdTime, modifiedTime, size, iconLink)",
+        pageSize: pageSize,
+        pageToken: nextPageToken,
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+      })) as {
+        data: {
+          files?: Array<{
+            id?: string;
+            name?: string;
+            mimeType?: string;
+            webViewLink?: string;
+            createdTime?: string;
+            modifiedTime?: string;
+            size?: string;
+            iconLink?: string;
+          }>;
+          nextPageToken?: string;
+        };
+      };
+
+      const files = response.data.files || [];
+      nextPageToken = response.data.nextPageToken;
+
+      const mappedFiles = files.map((file) => ({
+        id: file.id || "",
+        name: file.name || "",
+        mimeType: file.mimeType || undefined,
+        webViewLink: file.webViewLink || undefined,
+        createdTime: file.createdTime || undefined,
+        modifiedTime: file.modifiedTime || undefined,
+        size: file.size ? parseInt(file.size) : undefined,
+        iconLink: file.iconLink || undefined,
+      }));
+
+      allFiles = [...allFiles, ...mappedFiles];
+      filesCount = allFiles.length;
+
+      console.log(
+        `Retrieved ${mappedFiles.length} files in this page. Total so far: ${filesCount}`,
+      );
+
+      if (maxFiles && filesCount >= maxFiles) {
+        allFiles = allFiles.slice(0, maxFiles);
+        break;
+      }
+    } while (nextPageToken);
+
+    console.log(
+      `Found a total of ${allFiles.length} files in Google Drive folder`,
+    );
+    return allFiles;
   } catch (error) {
     console.error("Error listing resources from Google Drive:", error);
     throw error;

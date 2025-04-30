@@ -27,8 +27,6 @@ dotenv.config();
 const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || "text-embedding-3-large";
 const REASONING_MODEL = process.env.REASONING_MODEL || "gpt-4o";
 const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
-const PORT = process.env.PORT || 3000;
-const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
 
 const openai_client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -40,8 +38,8 @@ const openai_client = new OpenAI({
 async function withRateLimitRetry<T>(
   operation: () => Promise<T>,
   maxRetries: number = 5,
-  initialDelay: number = 1000,
-  backoffFactor: number = 2,
+  initialDelay: number = 60000,
+  backoffFactor: number = 1.5,
 ): Promise<T> {
   let retries = 0;
   let delay = initialDelay;
@@ -50,10 +48,16 @@ async function withRateLimitRetry<T>(
     try {
       return await operation();
     } catch (error) {
+      interface ResponseError {
+        status?: number;
+        statusCode?: number;
+        message?: string;
+      }
+
       const isRateLimit =
         (error instanceof Error && error.message.includes("429")) ||
-        (error as any)?.status === 429 ||
-        (error as any)?.statusCode === 429;
+        (error as ResponseError)?.status === 429 ||
+        (error as ResponseError)?.statusCode === 429;
 
       if (retries >= maxRetries || !isRateLimit) {
         throw error;
@@ -217,6 +221,7 @@ async function extractTextContent(
           } catch (e) {
             console.warn(
               `Could not stringify content for unsupported file type: ${fileType}`,
+              e,
             );
             textContent = "Content extraction not supported for this file type";
           }
@@ -274,18 +279,23 @@ function generateFileUrl(
 /**
  * Process all files in the Google Drive folder
  * If onlyNew is true, only process files that haven't been processed before
+ * Now supports processing more than 100 files
  */
-async function processGoogleDriveFiles(onlyNew: boolean = true): Promise<void> {
+export async function processGoogleDriveFiles(
+  onlyNew: boolean = true,
+  maxFiles?: number,
+): Promise<void> {
   if (!FOLDER_ID) {
     console.error("Missing Google Drive folder ID in environment variables.");
     return;
   }
   console.log(
-    `Processing files from Google Drive folder: ${FOLDER_ID} (onlyNew: ${onlyNew})`,
+    `Processing files from Google Drive folder: ${FOLDER_ID} (onlyNew: ${onlyNew}, maxFiles: ${maxFiles || "unlimited"})`,
   );
 
   try {
-    const files = await listResourcesInDrive(FOLDER_ID);
+    // Pass the maxFiles parameter to listResourcesInDrive
+    const files = await listResourcesInDrive(FOLDER_ID, undefined, maxFiles);
     console.log(`Found ${files.length} files in Google Drive folder`);
 
     let processedFileIds: string[] = [];
@@ -377,7 +387,6 @@ async function processGoogleDriveFiles(onlyNew: boolean = true): Promise<void> {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error processing Google Drive files: ${errorMessage}`);
     throw error;
-    exit(1);
   }
 }
 
@@ -712,6 +721,16 @@ async function main(): Promise<void> {
   const processAll = args.includes("--all");
   const deleteFirst = args.includes("--delete");
 
+  let maxFiles: number | undefined = undefined;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--maxFiles" && i + 1 < args.length) {
+      const val = parseInt(args[i + 1], 10);
+      if (!isNaN(val) && val > 0) {
+        maxFiles = val;
+      }
+    }
+  }
+
   try {
     if (deleteFirst) {
       console.log("Deleting all resources from MongoDB...");
@@ -719,7 +738,7 @@ async function main(): Promise<void> {
       console.log("Deleted all resources from MongoDB.");
     }
 
-    await processGoogleDriveFiles(!processAll);
+    await processGoogleDriveFiles(!processAll, maxFiles);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error in main function: ${errorMessage}`);

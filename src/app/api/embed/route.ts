@@ -1,5 +1,3 @@
-// app/api/embed/route.ts
-
 import { NextRequest, NextResponse } from "next/server";
 import { processGoogleDriveFiles } from "@/scripts/embedResources";
 
@@ -15,6 +13,7 @@ export async function POST(request: NextRequest) {
     } catch (parseError) {
       console.log(
         "No JSON body provided or malformed JSON, using empty object",
+        parseError,
       );
     }
 
@@ -22,14 +21,27 @@ export async function POST(request: NextRequest) {
 
     if (password === process.env.PASSWORD) {
       let shouldProcessAll = false;
-      if (payload && typeof payload === "object" && "processAll" in payload) {
-        shouldProcessAll = Boolean(payload.processAll);
+      let maxFiles: number | undefined = undefined;
+
+      if (payload && typeof payload === "object") {
+        if ("processAll" in payload) {
+          shouldProcessAll = Boolean(payload.processAll);
+        }
+
+        if ("maxFiles" in payload) {
+          const maxFilesValue = Number(payload.maxFiles);
+          if (!isNaN(maxFilesValue) && maxFilesValue > 0) {
+            maxFiles = maxFilesValue;
+          }
+        }
       }
 
       console.log("Received payload:", payload);
       console.log("Should process all files:", shouldProcessAll);
+      console.log("Maximum files to process:", maxFiles || "unlimited");
+
       try {
-        await processGoogleDriveFiles(!shouldProcessAll);
+        await processGoogleDriveFiles(!shouldProcessAll, maxFiles);
         console.log("Webhook-triggered processing completed successfully");
       } catch (error) {
         console.error("Error in webhook-triggered processing:", error);

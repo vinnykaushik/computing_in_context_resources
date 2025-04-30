@@ -12,36 +12,129 @@ import { createEnhancedQueryText, logQueryParsing } from "./phraseAwareSearch";
 import * as fs from "fs";
 import * as path from "path";
 
-dotenv.config();
+// Reload environment variables to ensure we have the latest values
+dotenv.config({ override: true });
 
+// Store the connection string to detect changes
+let currentConnectionString = "";
+
+// Use a global variable to maintain the connection across requests
 let client: MongoClient | null = null;
+
+// Connection options with proper timeouts and retries
+const connectionOptions = {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+  serverSelectionTimeoutMS: 10000, // 10 seconds timeout for server selection
+  connectTimeoutMS: 30000, // 30 seconds timeout for initial connection
+  socketTimeoutMS: 45000, // 45 seconds for socket timeout
+  maxPoolSize: 10, // Max pool size
+  minPoolSize: 5, // Min pool size
+  maxIdleTimeMS: 30000, // How long a connection can stay idle in the pool
+  waitQueueTimeoutMS: 10000, // How long a thread can wait for a connection
+};
 
 /**
  * Connect to MongoDB database
+ * @param forceReconnect Whether to force a reconnection
  * @returns MongoDB database connection
  */
-async function connectToDatabase() {
-  if (!client) {
+async function connectToDatabase(forceReconnect = false) {
+  try {
+    // Get the current connection string
     const MONGODB_CONNECTION_STRING = process.env.MONGODB_CONNECTION_STRING;
     if (!MONGODB_CONNECTION_STRING) {
       throw new Error("Missing MONGODB_CONNECTION_STRING environment variable");
     }
 
-    // Initialize the MongoDB client
-    client = new MongoClient(MONGODB_CONNECTION_STRING);
-    try {
-      await client.connect();
-      console.log("Connected to MongoDB");
-    } catch (error) {
-      console.error("Error connecting to MongoDB:", error);
+    const dbName = process.env.MONGODB_DB_NAME || "computing_in_context";
+
+    // Check if connection string has changed (which would require reconnection)
+    const connectionChanged =
+      currentConnectionString !== "" &&
+      currentConnectionString !== MONGODB_CONNECTION_STRING;
+
+    // Force reconnection if requested OR if connection string changed
+    if ((forceReconnect || connectionChanged) && client) {
+      console.log("Forcing MongoDB connection to close for reconnection");
+      if (connectionChanged) {
+        console.log("Connection string changed - reconnecting to new database");
+      }
+      try {
+        await client.close(true); // True means force close
+      } catch (closeError) {
+        console.error("Error closing MongoDB connection:", closeError);
+      }
       client = null;
-      // Don't recursively call connectToDatabase as it can cause a stack overflow
+    }
+
+    // If we already have a connection, return the existing db instance
+    if (client && !connectionChanged) {
+      // Ping to make sure connection is still alive
+      try {
+        const db = client.db(dbName);
+        await db.command({ ping: 1 });
+        return db;
+      } catch (pingError) {
+        console.log("MongoDB connection lost, reconnecting...", pingError);
+        // If ping fails, try to reconnect
+        if (client) {
+          try {
+            await client.close(true);
+          } catch (closeError) {
+            console.error(
+              "Error closing previous MongoDB connection:",
+              closeError,
+            );
+          }
+        }
+        client = null;
+      }
+    }
+
+    // Save the current connection string for future comparison
+    currentConnectionString = MONGODB_CONNECTION_STRING;
+
+    // Create a new client with robust connection options
+    try {
+      client = new MongoClient(MONGODB_CONNECTION_STRING, connectionOptions);
+
+      // Connect to the client
+      await client.connect();
+      console.log(
+        `Connected to MongoDB at ${MONGODB_CONNECTION_STRING.split("@").pop()}`,
+      ); // Show host without credentials
+
+      // Get db instance and return it
+      const db = client.db(dbName);
+      console.log(`Using database: ${dbName}`);
+
+      // Return the database
+      return db;
+    } catch (connectionError) {
+      console.error("Error creating new MongoDB connection:", connectionError);
+      client = null;
       throw new Error(
-        `MongoDB connection failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+        `MongoDB connection failed: ${connectionError instanceof Error ? connectionError.message : "Unknown error"}`,
       );
     }
+  } catch (error) {
+    console.error("Error connecting to MongoDB:", error);
+
+    // Clean up if connection failed
+    if (client) {
+      try {
+        await client.close(true);
+      } catch (closeError) {
+        console.error("Error closing failed MongoDB connection:", closeError);
+      }
+    }
+
+    client = null;
+    throw new Error(
+      `MongoDB connection failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+    );
   }
-  return client.db("computing_in_context");
 }
 
 /**
@@ -49,10 +142,38 @@ async function connectToDatabase() {
  */
 export async function closeDatabaseConnection() {
   if (client) {
-    await client.close();
-    client = null;
-    console.log("MongoDB connection closed");
+    try {
+      await client.close();
+      console.log("MongoDB connection closed");
+    } catch (error) {
+      console.error("Error closing MongoDB connection:", error);
+    } finally {
+      client = null;
+    }
   }
+}
+
+/**
+ * Force reconnects to the MongoDB database with the current .env settings
+ * This is useful when you've updated your .env file and want to connect to a new database
+ */
+export async function forceReconnectToMongoDB() {
+  console.log(
+    "Forcing reconnection to MongoDB with current environment variables",
+  );
+  // Re-load environment variables
+  dotenv.config({ override: true });
+  // Close any existing connection
+  if (client) {
+    try {
+      await client.close(true);
+    } catch (error) {
+      console.error("Error closing existing connection:", error);
+    }
+    client = null;
+  }
+  // Force reconnection
+  return connectToDatabase(true);
 }
 
 /**
@@ -74,10 +195,8 @@ async function embedQuery(query: string) {
       apiKey: OPENAI_API_KEY,
     });
 
-    // Create enhanced query that preserves phrases
     const enhancedQuery = createEnhancedQueryText(query);
 
-    // For debugging
     if (process.env.NODE_ENV === "development") {
       logQueryParsing(query);
       console.log("Enhanced query:", enhancedQuery);
@@ -106,7 +225,8 @@ async function embedQuery(query: string) {
  */
 export async function getProcessedFileIds(): Promise<string[]> {
   try {
-    const db = await connectToDatabase();
+    // Use force reconnect = false to avoid unnecessary reconnections
+    const db = await connectToDatabase(false);
     const resources = db.collection("resources");
 
     // Query for all documents that have a drive_id field
@@ -297,7 +417,7 @@ export async function getAllResources(
   filters: Record<string, string | string[]> = {},
   limit: number = 100,
 ) {
-  const db = await connectToDatabase();
+  const db = await connectToDatabase(false);
   const resources = db.collection("resources");
 
   try {
@@ -642,3 +762,5 @@ export async function exportResourcesFromMongoDB(
 
   console.log(`Exported ${count} resources to ${output_dir} directory`);
 }
+
+process.on("exit", closeDatabaseConnection);
