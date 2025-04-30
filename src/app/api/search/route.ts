@@ -8,25 +8,22 @@ import { SearchResult } from "@/utils/types";
  */
 export async function GET(request: Request) {
   try {
-    // Extract filter parameters from request URL
     const url = new URL(request.url);
     const params = url.searchParams;
 
     const filters: Record<string, string> = {};
 
-    // Get filter values if they exist in query parameters
     if (params.has("language")) filters.language = params.get("language")!;
     if (params.has("course_level"))
       filters.course_level = params.get("course_level")!;
     if (params.has("sequence_position"))
       filters.sequence_position = params.get("sequence_position")!;
+    if (params.has("file_type")) filters.file_type = params.get("file_type")!;
 
-    // Log filters for debugging
     if (process.env.NODE_ENV === "development") {
       console.log("GET API received filters:", filters);
     }
 
-    // Pass filters to getAllResources
     const documents = await getAllResources(filters);
 
     if (!documents || documents.length === 0) {

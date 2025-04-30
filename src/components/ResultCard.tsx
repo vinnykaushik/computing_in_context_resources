@@ -15,6 +15,7 @@ type ResultCardProps = {
   confidenceScore: number;
   link: string;
   displayConfidenceScore?: boolean;
+  file_type?: string;
 };
 
 const ResultCard: React.FC<ResultCardProps> = ({
@@ -30,6 +31,7 @@ const ResultCard: React.FC<ResultCardProps> = ({
   confidenceScore,
   link,
   displayConfidenceScore = false,
+  file_type,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -63,6 +65,30 @@ const ResultCard: React.FC<ResultCardProps> = ({
         return "bg-red-100 text-red-800 border border-red-200";
       default:
         return "bg-gray-100 text-gray-800 border border-gray-200";
+    }
+  };
+
+  // Define file type styling
+  const getFileTypeStyle = () => {
+    switch (file_type?.toLowerCase()) {
+      case "pdf":
+        return "bg-red-50 text-red-600 border border-red-100";
+      case "notebook":
+      case "ipynb":
+        return "bg-green-50 text-green-600 border border-green-100";
+      case "python":
+      case "py":
+        return "bg-blue-50 text-blue-600 border border-blue-100";
+      case "javascript":
+      case "js":
+        return "bg-yellow-50 text-yellow-600 border border-yellow-100";
+      case "java":
+        return "bg-orange-50 text-orange-600 border border-orange-100";
+      case "docx":
+      case "doc":
+        return "bg-indigo-50 text-indigo-600 border border-indigo-100";
+      default:
+        return "bg-purple-50 text-purple-600 border border-purple-100";
     }
   };
 
@@ -105,6 +131,15 @@ const ResultCard: React.FC<ResultCardProps> = ({
             <span className="opacity-70">Language:</span>{" "}
             {toTitleCase(language) || "Unknown"}
           </div>
+
+          {file_type && (
+            <div
+              className={`${getFileTypeStyle()} rounded-full px-3 py-1 text-xs font-medium`}
+            >
+              <span className="opacity-70">File Type:</span> .
+              {file_type.toLowerCase()}
+            </div>
+          )}
 
           <div className="rounded-full border border-gray-200 bg-gray-100 px-3 py-1 text-xs font-medium text-gray-800">
             <span className="opacity-70">Level:</span>{" "}
