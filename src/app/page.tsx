@@ -23,6 +23,7 @@ export default function Home() {
   const [sequencePositionOptions, setSequencePositionOptions] = useState<
     string[]
   >([]);
+  const [fileTypeOptions, setFileTypeOptions] = useState<string[]>([]);
 
   useEffect(() => {
     async function fetchFilterOptions() {
@@ -47,6 +48,13 @@ export default function Home() {
         if (sequencePositionResponse.ok) {
           const sequencePositions = await sequencePositionResponse.json();
           setSequencePositionOptions(sequencePositions);
+        }
+        const fileTypeResponse = await fetch(
+          "/api/unique-values?field=file_type",
+        );
+        if (fileTypeResponse.ok) {
+          const fileTypes = await fileTypeResponse.json();
+          setFileTypeOptions(fileTypes);
         }
       } catch (error) {
         console.error("Error fetching filter options:", error);
@@ -76,6 +84,7 @@ export default function Home() {
           params.append("course_level", filters.course_level);
         if (filters.sequence_position)
           params.append("sequence_position", filters.sequence_position);
+        if (filters.file_type) params.append("file_type", filters.file_type);
 
         const url = `/api/search${params.toString() ? `?${params.toString()}` : ""}`;
 
@@ -334,7 +343,7 @@ export default function Home() {
 
               {showFilters && (
                 <div className="mt-2 rounded-lg bg-gray-50 p-5 shadow-inner transition-all duration-200">
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
                     {/* Language filter with dynamic options */}
                     <div>
                       <label className="mb-1 block text-sm font-medium text-gray-700">
@@ -406,6 +415,30 @@ export default function Home() {
                         ))}
                       </select>
                     </div>
+
+                    {/* File Type filter with dynamic options */}
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-gray-700">
+                        File Type
+                      </label>
+                      <select
+                        value={filters.file_type || ""}
+                        onChange={(e) =>
+                          setFilters({
+                            ...filters,
+                            file_type: e.target.value || undefined,
+                          })
+                        }
+                        className="w-full rounded-lg border border-gray-200 p-2 shadow-sm focus:border-blue-300 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                      >
+                        <option value="">Any File Type</option>
+                        {fileTypeOptions.map((fileType) => (
+                          <option key={fileType} value={fileType}>
+                            {toTitleCase(fileType)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 </div>
               )}
@@ -457,6 +490,7 @@ export default function Home() {
                           confidenceScore={result.score}
                           link={result.url}
                           displayConfidenceScore={!!query}
+                          file_type={result.file_type}
                         />
                       </div>
                     ))}
@@ -522,6 +556,10 @@ export default function Home() {
               (e.g., Beginning, Middle, End).
             </li>
             <li>
+              <b>File Type:</b> The type of resource file (e.g., PDF, Notebook,
+              Python).
+            </li>
+            <li>
               <b>Lesson Context:</b> The context in which the resource is used.
             </li>
             <li>
@@ -542,8 +580,8 @@ export default function Home() {
               structures&quot;
             </li>
             <li>
-              Filter results by programming language, course level, or sequence
-              position
+              Filter results by programming language, course level, file type,
+              or sequence position
             </li>
             <li>
               Browse all resources by using filters without a search query

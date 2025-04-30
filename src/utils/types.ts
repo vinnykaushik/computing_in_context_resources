@@ -77,8 +77,18 @@ export type SearchOptions = {
   file_type?: string;
 };
 
-export type SearchResult = {
+export interface SearchFilters {
+  language?: string;
+  course_level?: string;
+  sequence_position?: string;
+  file_type?: string;
+  context?: string;
+}
+
+export interface SearchResult {
   title: string;
+  snippet?: string;
+  score: number;
   url: string;
   language: string;
   course_level: string;
@@ -86,16 +96,10 @@ export type SearchResult = {
   context: string;
   description: string;
   cs_concepts: string;
-  score: number;
   author?: string;
   university?: string;
-};
-
-export type SearchFilters = {
-  language?: string;
-  course_level?: string;
-  sequence_position?: string;
-};
+  file_type?: string;
+}
 
 export type DriveFileInfo = {
   id: string;

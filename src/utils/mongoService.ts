@@ -220,12 +220,10 @@ export async function searchResources(
 
       if (Object.keys(filters).length > 0) {
         const filterCriteria: Record<string, string | string[] | object> = {};
-
-        // Handle standard filters
         ["language", "course_level", "sequence_position", "file_type"].forEach(
           (field) => {
             if (filters[field]) {
-              if (field === "sequence_position") {
+              if (field === "sequence_position" || field === "file_type") {
                 filterCriteria[field] = String(filters[field]).toLowerCase();
               } else {
                 filterCriteria[field] = filters[field];
@@ -234,7 +232,6 @@ export async function searchResources(
           },
         );
 
-        // Add context search if provided
         if (filters.context && typeof filters.context === "string") {
           filterCriteria.context = { $regex: filters.context, $options: "i" };
         }
@@ -316,7 +313,7 @@ export async function getAllResources(
     ["language", "course_level", "sequence_position", "file_type"].forEach(
       (field) => {
         if (filters[field]) {
-          if (field === "sequence_position") {
+          if (field === "sequence_position" || field === "file_type") {
             filterCriteria[field] = String(filters[field]).toLowerCase();
           } else {
             filterCriteria[field] = filters[field];
