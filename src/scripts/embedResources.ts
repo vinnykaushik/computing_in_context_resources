@@ -25,8 +25,7 @@ import mammoth from "mammoth";
 
 dotenv.config();
 const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || "text-embedding-3-large";
-const REASONING_MODEL =
-  process.env.REASONING_MODEL || "gpt-4.1-nano-2025-04-14";
+const REASONING_MODEL = process.env.REASONING_MODEL || "gpt-4.1-nano";
 const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
 
 const openai_client = new OpenAI({
